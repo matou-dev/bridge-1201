@@ -78,7 +78,7 @@ if [ "${BUILD_ONLY:-}" = "1" ]; then
     git -C "$r" diff --quiet && git -C "$r" diff --cached --quiet \
       || { echo "FAIL r2-release : dirty tree in <$r> (release from clean checkouts only)"; exit 1; }
   done
-  grep -q 'version = "@VERSION@"' forge/src/META-INF/mods.toml \
+  grep -q 'version="@VERSION@"' forge/src/META-INF/mods.toml \
     || { echo "FAIL r2-release : mods.toml template hardcoded (keep @VERSION@, bump via VERSION=)"; exit 1; }
 fi
 
