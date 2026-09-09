@@ -1,0 +1,65 @@
+#!/bin/sh
+# Gate bridge-1201 : anti-contamination + contenu-wire + forge isole 1.20.1.
+# Etage 1 (toujours vert, sans MC) : siblings ../spi + ../example1 presents
+# + compile + E2E pur D2 (ForgeContentCheck : packs issus des vrais .matou,
+# monde fake enregistreur ; ce repo ne porte aucun java/ pur : le seam
+# fr.iamacat.bridge vient de matou-spi, couvert par BridgeCheck cote SPI).
+# Etage 2 (Forge 47.2.0) : compile forge/ contre tools/live/stub
+# (shape-only, jamais execute) — vert sans MC_JAR. Etage 3 (live, D3) :
+# LIVE=1 runs tools/run-live.sh (fails loudly until D3 wires it, never
+# silently), skip otherwise. Jamais de chemin machine en dur ici.
+set -eu
+cd "$(dirname "$0")/.."
+hits=$(rg -n --no-heading "fr\.iamacat\.matoulib" \
+  --glob '!tools/**' --glob '!.git/**' --glob '!*.md' . || true)
+if [ -n "$hits" ]; then
+  echo "FAIL no-legacy-matoulib :"
+  echo "$hits"
+  exit 1
+fi
+echo "ok (no-legacy-matoulib)"
+# Etage 1 : compile contre les checkouts siblings ../spi + ../example1
+# (convention siblings, cf. hub README) + E2E pur D2. Refus bruyant.
+SPI=../spi/java/src
+[ -d "$SPI" ] || { echo "FAIL bridge-skeleton : spi sibling absent (cloner hub+spi+bridge-1201 en siblings)"; exit 1; }
+EX1=../example1/java/src
+[ -d "$EX1" ] || { echo "FAIL bridge-content : example1 sibling absent (cloner hub+spi+bridge-1201+example1 en siblings)"; exit 1; }
+[ -f ../example1/content/owned.matou ] || { echo "FAIL bridge-content : example1 content absent"; exit 1; }
+# SPI_PIN : ce bridge est valide contre ce SPI-la, pas un autre. Un sibling
+# qui ne matche pas = bridge en avance/retard — re-valider puis bumper.
+PIN=$(tr -d '[:space:]' < SPI_PIN)
+[ -n "$PIN" ] || { echo "FAIL spi-pin : empty SPI_PIN"; exit 1; }
+want=$(git -C ../spi rev-list -n 1 "$PIN" 2>/dev/null) || { echo "FAIL spi-pin : unknown pin <$PIN> (fetch tags?)"; exit 1; }
+got=$(git -C ../spi rev-parse HEAD) || { echo "FAIL spi-pin : ../spi not a git checkout"; exit 1; }
+[ "$want" = "$got" ] || { echo "FAIL spi-pin : want $PIN ($want), sibling $got (re-validate, then bump SPI_PIN)"; exit 1; }
+echo "ok (spi-pin : $PIN)"
+# D2 E2E pur : java/ ne touche jamais MC/Forge.
+# Seuls les imports comptent : les commentaires peuvent les nommer.
+# (net.minecraftforge.* starts with the net.minecraft prefix, so the pattern
+# below refuses it too.)
+mc_hits=$(rg -n --no-heading "^\s*import\s+(net\.minecraft|cpw\.mods)" \
+  java --glob '!build/**' || true)
+if [ -n "$mc_hits" ]; then
+  echo "FAIL zero-mc-bridge :"
+  echo "$mc_hits"
+  exit 1
+fi
+echo "ok (zero-mc-bridge)"
+mkdir -p build/sib
+javac --release 8 -d build/sib $(find "$SPI" "$EX1" -name '*.java')
+echo "ok (sib-spi-ex1)"
+javac --release 8 -cp build/sib -d build/sib $(find java/test -name '*.java')
+java -cp build/sib fr.iamacat.bridge.ForgeContentCheck
+# Etage 2 : forge/ seul touche MC/Forge (1.20.1). Stub shape-only, pas de
+# MC_JAR requis : vert partout, le live D3 prouve contre le vrai jar
+# (etage 3, LIVE=1).
+mkdir -p forge/build
+javac --release 8 -cp build/sib -d forge/build $(find forge/src tools/live/stub -name '*.java')
+echo "ok (forge-stub)"
+# Etage 3 (D3) : live opt-in. Default skip keeps CI green without
+# network/Java 8; LIVE=1 fails loudly without them, never silently.
+if [ "${LIVE:-}" != "1" ]; then
+  echo "skip live (LIVE!=1)"
+  exit 0
+fi
+exec sh tools/run-live.sh
