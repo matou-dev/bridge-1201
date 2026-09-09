@@ -57,7 +57,7 @@ mkdir -p forge/build
 javac --release 8 -cp build/sib -d forge/build $(find forge/src tools/live/stub -name '*.java')
 echo "ok (forge-stub)"
 # Etage 3 (D3) : live opt-in. Default skip keeps CI green without
-# network/Java 8; LIVE=1 fails loudly without them, never silently.
+# network/Java 17; LIVE=1 fails loudly without them, never silently.
 if [ "${LIVE:-}" != "1" ]; then
   echo "skip live (LIVE!=1)"
   exit 0

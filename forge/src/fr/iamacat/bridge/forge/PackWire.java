@@ -5,12 +5,14 @@ import fr.iamacat.bridge.Packs;
 import fr.iamacat.bridge.Packs.PackSpec;
 import fr.iamacat.spi.ConfigurablePack;
 import fr.iamacat.spi.ContentPack;
-import net.minecraft.block.Block;
-import net.minecraft.world.World;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
+import net.minecraftforge.registries.ForgeRegistries;
 
 /**
  * D1 live binding: one configured pack plus where its cells land. Bound
- * once at init (fail fast), applied per world tick. Only this package may
+ * once at init (fail fast), applied per level tick. Only this package may
  * touch MC/Forge.
  */
 public final class PackWire {
@@ -41,7 +43,8 @@ public final class PackWire {
                     "E_FORGE_PACKS:args rejected <" + spec.className
                             + "> (pack takes no args)");
         }
-        Block block = Block.getBlockFromName(spec.blockName);
+        Block block = ForgeRegistries.BLOCKS.getValue(
+                new ResourceLocation(spec.blockName));
         if (block == null) {
             throw new IllegalArgumentException("E_FORGE_BLOCK:unknown <"
                     + spec.blockName + ">");
@@ -51,12 +54,12 @@ public final class PackWire {
         return new PackWire(pack, spec.y, block);
     }
 
-    /** One tick on one world: decide pure, land cells. */
-    public void applyTo(World world, long tick) {
-        if (world == null) {
+    /** One tick on one level: decide pure, land cells. */
+    public void applyTo(Level level, long tick) {
+        if (level == null) {
             throw new NullPointerException("E_FORGE_WORLD:null");
         }
         ForgeContent.applyAll(pack, tick,
-                new WorldCellSink(world, y, block));
+                new WorldCellSink(level, y, block));
     }
 }

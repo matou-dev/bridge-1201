@@ -1,25 +1,19 @@
 package net.minecraftforge.fml.common;
 
+import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
 
 /**
- * C1 compile stub: shape-only 1.12.2 Forge API used by {@code forge/}
- * sources. Never runs. Forge classes are never obfuscated, so member names
- * are final; tools/run-live.sh (C3) will assert their presence in the
- * provisioned 2860 jar — drift fails loudly.
+ * D1 compile stub: shape-only Forge 1.20.1-47.2.0 API (javafmllanguage jar,
+ * never obfuscated). Never runs (compile classpath only). Member
+ * {@code value} is pinned by tools/run-live.sh (D3) — drift fails loudly.
+ * Retention RUNTIME is load-bearing (mirrors the real annotation): a
+ * CLASS-retention stub would emit invisible usages.
  */
 @Retention(RetentionPolicy.RUNTIME)
+@Target(ElementType.TYPE)
 public @interface Mod {
-    String modid();
-
-    String name() default "";
-
-    String version() default "";
-
-    String acceptableRemoteVersions() default "";
-
-    @Retention(RetentionPolicy.RUNTIME)
-    @interface EventHandler {
-    }
+    String value();
 }

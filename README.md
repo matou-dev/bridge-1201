@@ -43,8 +43,19 @@ from the source files + fake world; `ForgeContent.merge ==
 AdditiveScatterJob.merge` comparator). Body kept in sync with the other
 bridges by convention.
 
-## D3 live proof (TODO)
+## D3 live proof
 
-`tools/run-live.sh` is a scaffold placeholder that fails loudly until the
-live run is ported from bridge-1122 (pins, mapping, server boot,
-world==union verify). See the placeholder header for the port checklist.
+`tools/run-live.sh` (LIVE=1, Java 17): provisions Forge 1.20.1-47.2.0
+(checksum-verified), derives the narrow Mojmap→SRG map from pinned bytes
+(Mojang server.txt + mcp_config joined.tsrg v2 + javap on the vanilla jar),
+pins every stub member against the provisioned jars (vanilla members against
+the installer-renamed game jar, Forge members against universal/fmlcore/
+javafmllanguage/eventbus), builds versioned jars, reobfuscates the bridge,
+boots the server 150s (`run.sh nogui`, flat world), then proves
+world == pure union (stone only).
+
+Production naming (measured, not assumed): Mojmap classes with SRG members
+— the bridge ships FAT (spi + example1 embedded: 1.20.1 modules isolate
+every mods/ jar). Stub annotation retention mirrors the real annotations
+(RUNTIME): eventbus discovers handlers through RuntimeVisibleAnnotations
+only. Last green proof: hub STATE.md.

@@ -5,9 +5,11 @@ import java.util.zip.*;
 import org.objectweb.asm.*;
 import org.objectweb.asm.commons.*;
 
-/** C3 reobfuscator (same as B3): reobfuscate MCP-named member refs to SRG
- * (ForgeGradle reobf equivalent). Compiled against the provisioned ASM
- * (asm-all-5.0.3 on 1614, asm-debug-all-5.2 on 2860). */
+/** D3 reobfuscator (same tool as C3): reobfuscate Mojmap-named member refs
+ * to SRG (ForgeGradle reobf equivalent). Production classes stay Mojmap
+ * (the installer keeps classes official), so only narrow-map members move;
+ * Forge and mod classes pass through untouched. Compiled against the
+ * provisioned ASM (asm-9.5 + asm-commons-9.5 on 47.2.0). */
 public final class Reobf {
     public static void main(String[] a) throws Exception {
         if (a.length != 3) {
@@ -67,7 +69,7 @@ public final class Reobf {
             if (e.getName().endsWith(".class")) {
                 ClassReader cr = new ClassReader(data);
                 ClassWriter cw = new ClassWriter(0);
-                cr.accept(new RemappingClassAdapter(cw, remapper), ClassReader.EXPAND_FRAMES);
+                cr.accept(new ClassRemapper(cw, remapper), ClassReader.EXPAND_FRAMES);
                 out.write(cw.toByteArray());
             } else {
                 out.write(data);

@@ -1,8 +1,8 @@
 # D3 live runner: reproducible Forge 1.20.1 (1.20.1-47.2.0) proof environment.
 #
-# This image runs tools/run-live.sh (JDK 8 native: -source/-target, server
-# runtime), NOT tools/check.sh stage 1 (which needs a modern javac for
-# --release). JAVA8_HOME points at the image JDK.
+# This image runs tools/run-live.sh (JDK 17: --release 8 build, server
+# runtime), NOT tools/check.sh stage 1 (which needs any modern javac for
+# --release). JAVA17_HOME points at the image JDK.
 #
 # The image runs as a non-root `builder` user so bind-mounted checkouts
 # (D3_DIR, /w) keep host ownership — root-owned build/ leftovers poison
@@ -24,16 +24,18 @@
 # Root-owned `build/` leftovers in an old cache must be cleared once
 # (rm or fresh D3_DIR): run-live.sh refuses to build over them loudly.
 #
-# No machine paths inside the image: Java 8 + python3 + curl + git only
+# No machine paths inside the image: Java 17 + python3 + curl + git +
+# ripgrep only (ripgrep serves the check.sh contamination gates: without it
+# they would pass vacuously — never green by omission).
 # (git serves the release guards: VERSION + clean-tree checks).
 # Pins live in tools/run-live.sh, not here.
-# Repro pin (multi-arch index digest): same tag == same bytes.
-# Refresh deliberately (Docker Hub API), never silently.
-FROM eclipse-temurin:8-jdk-jammy@sha256:0d568cc4232ceb9ed2b5def9647c8f505ff504e8b21e3558e7a89ec59cd9ed0c
+# Repro pin (measured 2026-09-09 via docker pull): same tag == same bytes.
+# Refresh deliberately, never silently.
+FROM eclipse-temurin:17-jdk-jammy@sha256:c8e512c273fb824f1c48dafa8121ee6b4ba1fd20437165f75dbbb7c96e0dfdf5
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends python3 curl ca-certificates git \
+  && apt-get install -y --no-install-recommends python3 curl ca-certificates git ripgrep \
   && rm -rf /var/lib/apt/lists
-ENV JAVA8_HOME=/opt/java/openjdk
+ENV JAVA17_HOME=/opt/java/openjdk
 ARG UID=1000
 ARG GID=1000
 RUN groupadd -g "$GID" builder \

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""C3 probe (same as B3): list block IDs at height y in chunk (cx,cz) of a
-1.12.2 region file (Anvil pre-flattening: same numeric-ID layout as 1.7.10,
-stone is 1)."""
+"""D3 probe: list block names at height y in chunk (cx,cz) of a 1.20.1
+region file (post-flattening palette: sections carry a block_states palette
+of namespaced names plus packed long data)."""
 import struct, sys, zlib
 
 
@@ -20,7 +20,9 @@ def read_nbt(buf, pos):
 
 def read_payload(buf, pos, t):
     if t == 1:
-        return buf[pos], pos + 1
+        # TAG_Byte is signed (-128..127); section Y below 0 needs the sign.
+        v = buf[pos]
+        return (v - 256 if v > 127 else v), pos + 1
     if t == 2:
         return struct.unpack(">h", buf[pos:pos + 2])[0], pos + 2
     if t == 3:
@@ -43,7 +45,7 @@ def read_payload(buf, pos, t):
         pos += 5
         out = []
         for _ in range(n):
-            if et in (1, 2, 3, 4, 5, 6, 7, 8):
+            if et in (1, 2, 3, 4, 5, 6, 7, 8, 11, 12):
                 v, pos = read_payload(buf, pos, et)
                 out.append(v)
             elif et == 10:
@@ -54,6 +56,11 @@ def read_payload(buf, pos, t):
                         break
                     d[item[0]] = item[1]
                 out.append(d)
+            elif et == 9:
+                # Nested lists (e.g. section PostProcessing): each sublist
+                # carries its own element-type + length header.
+                v, pos = read_payload(buf, pos, 9)
+                out.append(v)
             else:
                 raise ValueError("list of %d" % et)
         return out, pos
@@ -69,6 +76,10 @@ def read_payload(buf, pos, t):
         n = struct.unpack(">i", buf[pos:pos + 4])[0]
         vals = struct.unpack(">%di" % n, buf[pos + 4:pos + 4 + 4 * n])
         return list(vals), pos + 4 + 4 * n
+    if t == 12:
+        n = struct.unpack(">i", buf[pos:pos + 4])[0]
+        vals = struct.unpack(">%dq" % n, buf[pos + 4:pos + 4 + 8 * n])
+        return list(vals), pos + 4 + 8 * n
     raise ValueError("tag %d" % t)
 
 
@@ -82,28 +93,56 @@ def chunk_at(path, cx, cz):
     ln = struct.unpack(">I", raw[pos:pos + 4])[0]
     comp = raw[pos + 4]
     data = raw[pos + 5:pos + 4 + ln]
-    if comp == 2:
+    if comp == 1:
+        import gzip
+        data = gzip.decompress(data)
+    elif comp == 2:
         data = zlib.decompress(data)
-    elif comp != 1:
+    elif comp != 3:
         raise SystemExit("compression %d" % comp)
     (name, val), _ = read_nbt(data, 0)
     return val
 
 
+def unpack_palette(palette, data):
+    # 4096 indices into palette from packed longs (no padding across words).
+    bits = max(4, (len(palette) - 1).bit_length())
+    idx = [0] * 4096
+    mask = (1 << bits) - 1
+    bit = 0
+    for i in range(4096):
+        w = bit // 64
+        o = bit % 64
+        v = (data[w] >> o) & mask
+        if o + bits > 64 and w + 1 < len(data):
+            v |= (data[w + 1] << (64 - o)) & mask
+        idx[i] = v
+        bit += bits
+    return idx
+
+
 def main():
     path, cx, cz, y = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
     root = chunk_at(path, cx, cz)
-    level = root["Level"]
     found = {}
-    for sec in level["Sections"]:
-        if sec["Y"] == (y >> 4):
-            blocks = sec["Blocks"]
-            ly = y & 15
+    for sec in root["sections"]:
+        base = sec["Y"] * 16
+        if base <= y < base + 16:
+            states = sec.get("block_states")
+            if not states:
+                continue
+            palette = [e["Name"] for e in states["palette"]]
+            if "data" in states:
+                idx = unpack_palette(palette, states["data"])
+            else:
+                # Single-valued section: Mojang omits data, all palette[0].
+                idx = [0] * 4096
+            ly = y - base
             for x in range(16):
                 for z in range(16):
-                    bid = blocks[ly * 256 + z * 16 + x]
-                    if bid != 0:
-                        found["%d,%d" % (x, z)] = bid
+                    name = palette[idx[(ly * 16 + z) * 16 + x]]
+                    if name != "minecraft:air":
+                        found["%d,%d" % (x, z)] = name
     for cell in sorted(found):
         print(cell, found[cell])
 

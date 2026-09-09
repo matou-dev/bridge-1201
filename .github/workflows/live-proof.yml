@@ -1,11 +1,11 @@
 # Manual live proof (D3): full Forge 1.20.1 (1.20.1-47.2.0) server run + world==union.
 #
-# Scaffold state: tools/run-live.sh is a placeholder that fails loudly until
-# D3 ports it from bridge-1122 (pins, mapping, server boot). A loud red
-# dispatch before the port is the designed behavior, never a silent skip.
-# Green runs on github-hosted runners need a pre-provisioned D3_DIR cache;
-# the reference path stays local (bridge README) or the pinned live image
-# (tools/live/Dockerfile). Last green proof: hub STATE.md.
+# tools/run-live.sh is wired (pins, Mojmap→SRG derive, run.sh boot, palette
+# verdict). Green runs on github-hosted runners need network once to
+# provision the D3_DIR cache (installer + mappings); set offline=true to
+# reuse cache, never download. The reference path stays local (bridge
+# README) or the pinned live image (tools/live/Dockerfile).
+# Last green proof: hub STATE.md.
 #
 # Actions pinned by SHA 2026-09-09 (tags v4); Dependabot keeps them fresh.
 name: live-proof
@@ -40,14 +40,14 @@ jobs:
         with:
           repository: matou-dev/minimap
           path: minimap
-      # Live path needs a real JDK 8 (javac -source 8 + server runtime),
-      # not the modern javac that tools/check.sh stage 1 requires.
+      # Live path needs a real JDK 17 (javac --release 8 + server runtime),
+      # not the default runner JDK tools/check.sh stage 1 tolerates.
       - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
         with:
           distribution: temurin
-          java-version: '8'
+          java-version: '17'
       - run: |
-          export JAVA8_HOME="$JAVA_HOME"
+          export JAVA17_HOME="$JAVA_HOME"
           export BOOT_SECS="${{ inputs.boot_secs }}"
           if [ "${{ inputs.offline }}" = "true" ]; then export D3_OFFLINE=1; fi
           sh bridge-1201/tools/run-live.sh

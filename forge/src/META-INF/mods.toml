@@ -1,0 +1,17 @@
+# D3: VERSION is stamped by tools/run-live.sh (@VERSION@ token); the R2
+# release guard refuses a hardcoded version here (bump via VERSION= env,
+# never source). This file ships in the bridge jar as META-INF/mods.toml.
+modLoader="javafml"
+loaderVersion="[47,)"
+license="MIT"
+[[mods]]
+modId="matoubridge"
+version="@VERSION@"
+displayName="MatouBridge"
+description="SPI bridge for Minecraft 1.20.1 (SRG-reobfuscated members)."
+[[dependencies.matoubridge]]
+modId="forge"
+mandatory=true
+versionRange="[47,)"
+ordering="NONE"
+side="BOTH"
