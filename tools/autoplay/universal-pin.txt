@@ -1,0 +1,10 @@
+# D3 autoplay Forge-surface pins (universal jar, never obfuscated): each
+# line is CLASS + grep pattern checked by hub tools/run-client.sh
+# (AUTOPLAY=1) via javap — same practice as the pin_uni checks in
+# tools/run-live.sh (D3 step 2c). @Mod/EventBus live in the modular
+# javafmllanguage/eventbus jars, not the universal: they are pinned by
+# run-live.sh pin_lib (which owns those paths), never here.
+net.minecraftforge.event.TickEvent$ClientTickEvent ClientTickEvent(
+net.minecraftforge.event.TickEvent$ServerTickEvent ServerTickEvent(
+net.minecraftforge.event.TickEvent$Phase END
+net.minecraftforge.common.MinecraftForge EVENT_BUS

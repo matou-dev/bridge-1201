@@ -1,0 +1,18 @@
+# D3 autoplay companion WANT: vanilla members the dev-only companion
+# references, one per line (M = method, owner MOJMAP + Mojmap name + SRG
+# name + descriptor + static 0|1). hub tools/run-client.sh (AUTOPLAY=1)
+# derives the narrow map from the pinned client jar + client.txt
+# (Mojang official mappings) + joined.tsrg v2 and pin-checks every line
+# (same practice as the live WANT in tools/run-live.sh, which joins
+# server.txt instead of client.txt). 1.20.1 ships no MCP snapshot and
+# needs none: the moj->obf->srg chain is fully pinned (client.txt sha1
+# in client-mappings-pin.txt, mcp_config sha1 in run-live.sh).
+#
+# No join member: the proof joins through the official --quickPlaySingleplayer
+# launch argument (vanilla path, zero mapped surface for joining — the
+# WorldOpenFlows route would drag LevelStorageAccess/WorldStem/Services
+# through the narrow map). The companion only counts server ticks and
+# quits. A wrong Mojmap name dies loudly at runtime
+# (NoSuchMethodError), never silently.
+M net/minecraft/client/Minecraft getInstance m_91087_ ()Lnet/minecraft/client/Minecraft; 1
+M net/minecraft/client/Minecraft stop m_91395_ ()V 0

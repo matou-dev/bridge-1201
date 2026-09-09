@@ -1,0 +1,8 @@
+# Pinned vanilla CLIENT mappings for the AUTOPLAY derive (DEV only):
+# Mojang official moj<->obf map (client.txt), URL + SHA1 + SIZE from the
+# pinned 1.20.1 version manifest (same manifest as client-pin.txt).
+# The server-side live derive uses server.txt instead (see
+# tools/run-live.sh D3 step 2) — client members need the client map.
+URL=https://piston-data.mojang.com/v1/objects/6c48521eed01fe2e8ecdadbd5ae348415f3c47da/client.txt
+SHA1=6c48521eed01fe2e8ecdadbd5ae348415f3c47da
+SIZE=8001795

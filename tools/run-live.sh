@@ -386,6 +386,8 @@ pin_uni() {
     || { echo "FAIL d3-live : universal pin unmet <$1 :: $2>"; exit 1; }
 }
 pin_uni 'net.minecraftforge.event.TickEvent$LevelTickEvent' 'level'
+pin_uni 'net.minecraftforge.event.TickEvent$ClientTickEvent' 'ClientTickEvent('
+pin_uni 'net.minecraftforge.event.TickEvent$ServerTickEvent' 'ServerTickEvent('
 pin_uni 'net.minecraftforge.event.TickEvent' 'side'
 pin_uni 'net.minecraftforge.event.TickEvent' 'phase'
 pin_uni 'net.minecraftforge.event.TickEvent$Phase' 'END'

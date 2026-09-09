@@ -1,0 +1,17 @@
+# D3 autoplay dev-only mod metadata: stamped by hub tools/run-client.sh
+# (@VERSION@ token, same practice as forge/src/META-INF/mods.toml). Ships
+# only in the DEV companion jar (matouautoplay.jar, never in dist/).
+modLoader="javafml"
+loaderVersion="[47,)"
+license="MIT"
+[[mods]]
+modId="matouautoplay"
+version="@VERSION@"
+displayName="MatouAutoplay"
+description="DEV-ONLY scripted client driver for the matou proof (tick-count, quit; quick-play joins). Never ships."
+[[dependencies.matouautoplay]]
+modId="forge"
+mandatory=true
+versionRange="[47,)"
+ordering="NONE"
+side="CLIENT"
