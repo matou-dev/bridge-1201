@@ -182,7 +182,10 @@ echo "ok d3-live : server provisioned (pins verified)"
 #    member, loud otherwise). The map covers every vanilla member our
 #    forge/ bytecode references (verified by constant-pool scan at D3 time:
 #    setBlock, dimension, OVERWORLD, defaultBlockState, plus the
-#    registration tranche: Properties.of, strength).
+#    registration tranche: Properties.of, strength, plus the loot tranche:
+#    ServerLevel/addFreshEntity, Entity/level/getX/getY/getZ,
+#    Level/isClientSide, Vec3i/getX/getY/getZ,
+#    BlockStateBase/getBlock, Items/DIAMOND).
 #    Production classes stay Mojmap (installer MERGE_MAPPING keeps classes
 #    official) — only members reobfuscate, so no class lines are needed.
 python3 - "$D3_DIR/mcp_config-1.20.1-20230612.114412.zip" "$D3_DIR/server-mappings.txt" "$MC_INNER" "$J17/javap" "$D3_DIR/srg-narrow.srg" <<'EOF'
@@ -287,10 +290,32 @@ WANT_METHODS = [
      "()Lnet/minecraft/world/level/block/state/BlockBehaviour$Properties;", True),
     ("net/minecraft/world/level/block/state/BlockBehaviour$Properties", "strength",
      "(F)Lnet/minecraft/world/level/block/state/BlockBehaviour$Properties;", False),
+    ("net/minecraft/server/level/ServerLevel", "addFreshEntity",
+     "(Lnet/minecraft/world/entity/Entity;)Z", False),
+    ("net/minecraft/world/entity/Entity", "level",
+     "()Lnet/minecraft/world/level/Level;", False),
+    ("net/minecraft/world/entity/Entity", "getX",
+     "()D", False),
+    ("net/minecraft/world/entity/Entity", "getY",
+     "()D", False),
+    ("net/minecraft/world/entity/Entity", "getZ",
+     "()D", False),
+    ("net/minecraft/world/level/Level", "isClientSide",
+     "()Z", False),
+    ("net/minecraft/core/Vec3i", "getX",
+     "()I", False),
+    ("net/minecraft/core/Vec3i", "getY",
+     "()I", False),
+    ("net/minecraft/core/Vec3i", "getZ",
+     "()I", False),
+    ("net/minecraft/world/level/block/state/BlockBehaviour$BlockStateBase", "getBlock",
+     "()Lnet/minecraft/world/level/block/Block;", False),
 ]
 WANT_FIELDS = [
     ("net/minecraft/world/level/Level", "OVERWORLD",
      "Lnet/minecraft/resources/ResourceKey;", True),
+    ("net/minecraft/world/item/Items", "DIAMOND",
+     "Lnet/minecraft/world/item/Item;", True),
 ]
 
 PRIM = {"B": "byte", "C": "char", "D": "double", "F": "float",
@@ -360,7 +385,7 @@ for owner, mcp, ftype, want_static in WANT_FIELDS:
     assert flags.get((obf_name, "F:" + ftype_obf)) == want_static, \
         "E_SRG_DERIVE:javap mismatch field <%s %s>" % (obf_owner, obf_name)
     lines.append("FD: %s/%s %s/%s" % (obf2srg[obf_owner], tm[0]["srg"], owner, mcp))
-assert len(lines) == 6, "E_SRG_DERIVE:want 6 lines, got %d" % len(lines)
+assert len(lines) == 17, "E_SRG_DERIVE:want 17 lines, got %d" % len(lines)
 open(outpath, "w").write("\n".join(lines) + "\n")
 print("ok d3-live : narrow SRG derived (%d lines)" % len(lines))
 EOF
@@ -382,8 +407,19 @@ pin_method "net/minecraft/world/level/block/Block/defaultBlockState" "()Lnet/min
 pin_method "net/minecraft/world/level/block/state/BlockBehaviour\$Properties/of" "()Lnet/minecraft/world/level/block/state/BlockBehaviour\$Properties;"
 pin_method "net/minecraft/world/level/block/state/BlockBehaviour\$Properties/strength" "(F)Lnet/minecraft/world/level/block/state/BlockBehaviour\$Properties;"
 pin_field "net/minecraft/world/level/Level/OVERWORLD"
-[ "$(grep -c . "$SRG_NARROW")" = "6" ] \
-  || { echo "FAIL d3-live : narrow map drift (want 6 lines)"; exit 1; }
+pin_method "net/minecraft/server/level/ServerLevel/addFreshEntity" "(Lnet/minecraft/world/entity/Entity;)Z"
+pin_method "net/minecraft/world/entity/Entity/level" "()Lnet/minecraft/world/level/Level;"
+pin_method "net/minecraft/world/entity/Entity/getX" "()D"
+pin_method "net/minecraft/world/entity/Entity/getY" "()D"
+pin_method "net/minecraft/world/entity/Entity/getZ" "()D"
+pin_method "net/minecraft/world/level/Level/isClientSide" "()Z"
+pin_method "net/minecraft/core/Vec3i/getX" "()I"
+pin_method "net/minecraft/core/Vec3i/getY" "()I"
+pin_method "net/minecraft/core/Vec3i/getZ" "()I"
+pin_method "net/minecraft/world/level/block/state/BlockBehaviour\$BlockStateBase/getBlock" "()Lnet/minecraft/world/level/block/Block;"
+pin_field "net/minecraft/world/item/Items/DIAMOND"
+[ "$(grep -c . "$SRG_NARROW")" = "17" ] \
+  || { echo "FAIL d3-live : narrow map drift (want 17 lines)"; exit 1; }
 echo "ok d3-live : stubs pinned to derived SRG"
 
 # 2c. Pin every stubbed member against the provisioned jars. Forge classes
@@ -411,6 +447,12 @@ pin_uni 'net.minecraftforge.registries.DeferredRegister' 'register('
 pin_uni 'net.minecraftforge.registries.RegistryObject' 'get('
 pin_uni 'net.minecraftforge.registries.RegistryObject' 'getId('
 pin_uni 'net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent' 'FMLCommonSetupEvent('
+pin_uni 'net.minecraftforge.event.level.BlockEvent' 'getLevel('
+pin_uni 'net.minecraftforge.event.level.BlockEvent' 'getPos('
+pin_uni 'net.minecraftforge.event.level.BlockEvent' 'getState('
+pin_uni 'net.minecraftforge.event.level.BlockEvent$BreakEvent' 'BreakEvent('
+pin_uni 'net.minecraftforge.event.entity.living.LivingEvent' 'getEntity('
+pin_uni 'net.minecraftforge.event.entity.living.LivingDropsEvent' 'LivingDropsEvent('
 pin_game() {
   "$J17/javap" -p -cp "$SRG_GAME" "$1" 2>/dev/null | grep -q "$2" \
     || { echo "FAIL d3-live : game pin unmet <$1 :: $2>"; exit 1; }
@@ -439,16 +481,20 @@ echo "ok d3-live : forge stubs pinned to provisioned jars"
 #    commit + same toolchain == same bytes, see normjar), manifests carry
 #    VERSION, the bridge jar embeds mods.toml.
 #    These are the exact bytes the live run proves AND the release ships.
-#    (No java/ stage: the pure seam ships from matou-spi, this repo carries
-#    only its Forge side.)
+#    Bridge-owned pure (java/src: loot store/seal, operator policy) compiles
+#    beside the seam and stages into the forge classes (same shape as
+#    1122/1165: java/ ships inside the bridge jar, never standalone).
 BLD="$D3_DIR/build"
 rm -rf "$BLD" \
   || { echo "FAIL d3-live : cannot clear <$BLD> (root-owned docker leftovers? point D3_DIR at a user-owned dir)"; exit 1; }
-mkdir -p "$BLD/spi" "$BLD/ex1" "$BLD/mini" "$BLD/forge" "$BLD/jars" "$BLD/modstoml/META-INF"
+mkdir -p "$BLD/spi" "$BLD/ex1" "$BLD/mini" "$BLD/forge" "$BLD/jars" "$BLD/modstoml/META-INF" "$BLD/bridge"
 "$J17/javac" --release 8 -nowarn -d "$BLD/spi" $(find ../spi/java/src -name '*.java')
 "$J17/javac" --release 8 -nowarn -cp "$BLD/spi" -d "$BLD/ex1" $(find ../example1/java/src -name '*.java')
 "$J17/javac" --release 8 -nowarn -cp "$BLD/spi" -d "$BLD/mini" $(find ../minimap/java/src -name '*.java')
-"$J17/javac" --release 8 -nowarn -cp "$BLD/spi:$BLD/ex1" -d "$BLD/forge" $(find tools/live/stub forge/src -name '*.java')
+"$J17/javac" --release 8 -nowarn -cp "$BLD/spi:$BLD/ex1" -d "$BLD/bridge" $(find java/src -name '*.java')
+"$J17/javac" --release 8 -nowarn -cp "$BLD/spi:$BLD/ex1:$BLD/bridge" -d "$BLD/forge" $(find tools/live/stub forge/src -name '*.java')
+# Bridge-owned pure stages into the forge classes (ships in the bridge jar).
+cp -r "$BLD/bridge/"* "$BLD/forge/"
 sed "s/@VERSION@/$VERSION/g" forge/src/META-INF/mods.toml > "$BLD/modstoml/META-INF/mods.toml"
 grep -q "version=\"$VERSION\"" "$BLD/modstoml/META-INF/mods.toml" \
   || { echo "FAIL d3-live : mods.toml stamp lost (want version $VERSION)"; exit 1; }
@@ -612,9 +658,9 @@ echo "ok d3-live : server ran ($BOOT_SECS s)"
 #    the rolling server log — Forge splits output across both).
 LOGS="$SERV/boot-d3.log"
 [ -f "$SERV/logs/latest.log" ] && LOGS="$LOGS $SERV/logs/latest.log"
-if grep -a -q "NoSuchMethodError\|NoSuchFieldError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|Encountered an unexpected exception" $LOGS; then
+if grep -a -q "NoSuchMethodError\|NoSuchFieldError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|E_LOOT\|Encountered an unexpected exception" $LOGS; then
   echo "FAIL d3-live : runtime refusal (see $SERV/boot-d3.log)"
-  grep -a -m5 "NoSuchMethodError\|NoSuchFieldError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|Caused by" $LOGS
+  grep -a -m5 "NoSuchMethodError\|NoSuchFieldError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|E_LOOT\|Caused by" $LOGS
   exit 1
 fi
 grep -a -q "matoubridge" $LOGS \

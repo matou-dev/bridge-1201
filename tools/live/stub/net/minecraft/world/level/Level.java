@@ -11,11 +11,21 @@ import net.minecraft.world.level.block.state.BlockState;
  * reobfuscated to SRG at D3 time (see tools/run-live.sh narrow map) and
  * pinned to the provisioned 1.20.1-47.2.0 jars — drift fails loudly.
  */
-public class Level {
+public class Level implements LevelAccessor {
     public static final ResourceKey<Level> OVERWORLD = null;
 
     public ResourceKey<Level> dimension() {
         return null;
+    }
+
+    /**
+     * Loot shape (hub decisions/LOOT.md): server-side gate. Mojmap name
+     * measured against the pinned 47.2.0 bytes (public {@code ()Z}
+     * method — the 1.16.5 {@code isRemote} field shape does not port).
+     * Pinned by tools/run-live.sh (narrow map) — drift fails loudly.
+     */
+    public boolean isClientSide() {
+        return false;
     }
 
     public boolean setBlock(BlockPos pos, BlockState state, int flags) {

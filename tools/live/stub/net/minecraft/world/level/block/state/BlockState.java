@@ -5,5 +5,5 @@ package net.minecraft.world.level.block.state;
  * {@code forge/} sources. Never runs (compile classpath only). Pinned by
  * tools/run-live.sh (D3) — drift fails loudly.
  */
-public class BlockState {
+public class BlockState extends BlockBehaviour.BlockStateBase {
 }
