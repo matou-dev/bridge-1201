@@ -15,3 +15,17 @@ mandatory=true
 versionRange="[47,)"
 ordering="NONE"
 side="BOTH"
+# Registration (see hub decisions/REGISTRATION.md): the second mod lives
+# in the same bridge jar under example1's own frozen modid (never a
+# rename target) and owns the example1: block registrations.
+[[mods]]
+modId="example1"
+version="@VERSION@"
+displayName="MatouExample1"
+description="Example1 content holder: registers example1 blocks."
+[[dependencies.example1]]
+modId="forge"
+mandatory=true
+versionRange="[47,)"
+ordering="NONE"
+side="BOTH"
