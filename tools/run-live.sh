@@ -211,7 +211,13 @@ echo "ok d3-live : server provisioned (pins verified)"
 #    Entity/getId/isAlive/moveTo, LivingEntity/getAttribute/setHealth/
 #    getMaxHealth, AttributeInstance/setBaseValue,
 #    EntityGetter/getEntitiesOfClass, EntityType/PIG,
-#    Attributes/MAX_HEALTH, plus the custom entity tranche (hub
+#    Attributes/MAX_HEALTH, plus the repop tranche (hub
+#    decisions/REPOP_SPIKE.md): no new member — the stone resolve rides
+#    ForgeRegistries.BLOCKS containsKey/getValue (universal pins below),
+#    the landing rides Level.setBlock/Block.defaultBlockState, and the
+#    break read rides the loot rows (Level/isClientSide/dimension,
+#    Vec3i/getX/getY/getZ, BlockStateBase/getBlock), plus the custom
+#    entity tranche (hub
 #    decisions/SPAWN.md): EntityType$Builder/of/sized/clientTrackingRange/
 #    build, Pig/createAttributes, AttributeSupplier$Builder/build, and the
 #    two vanilla SAMs our lambdas/method-refs target
@@ -844,9 +850,9 @@ echo "ok d3-live : server ran ($BOOT_SECS s)"
 #    the rolling server log — Forge splits output across both).
 LOGS="$SERV/boot-d3.log"
 [ -f "$SERV/logs/latest.log" ] && LOGS="$LOGS $SERV/logs/latest.log"
-if grep -a -q "NoSuchMethodError\|NoSuchFieldError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|E_LOOT\|E_SPAWN\|Encountered an unexpected exception" $LOGS; then
+if grep -a -q "NoSuchMethodError\|NoSuchFieldError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|E_LOOT\|E_SPAWN\|E_SPIKE\|Encountered an unexpected exception" $LOGS; then
   echo "FAIL d3-live : runtime refusal (see $SERV/boot-d3.log)"
-  grep -a -m5 "NoSuchMethodError\|NoSuchFieldError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|E_LOOT\|E_SPAWN\|Caused by" $LOGS
+  grep -a -m5 "NoSuchMethodError\|NoSuchFieldError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|E_LOOT\|E_SPAWN\|E_SPIKE\|Caused by" $LOGS
   exit 1
 fi
 grep -a -q "matoubridge" $LOGS \

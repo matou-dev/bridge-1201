@@ -7,6 +7,9 @@ import fr.iamacat.bridge.loot.DropStore;
 import fr.iamacat.bridge.loot.LootSeal;
 import fr.iamacat.bridge.spawn.SpawnSeal;
 import fr.iamacat.bridge.spawn.SpawnStore;
+import fr.iamacat.bridge.spike.MinedStore;
+import fr.iamacat.bridge.spike.RepopJob;
+import fr.iamacat.bridge.spike.RepopSeal;
 import fr.iamacat.bridge.wire.OperatorPolicy;
 import fr.iamacat.example1.LootJob;
 import fr.iamacat.example1.LootTable;
@@ -65,6 +68,23 @@ import net.minecraftforge.registries.ForgeRegistries;
  * means no packs, staying passive (Q1 cohabitation). Malformed config or
  * unloadable pack fails fast at setup — a half-wired bridge never
  * ticks.
+ *
+ * <p>Repop spike (event-sourced, vanilla stone, zero registration — hub
+ * decisions/REPOP_SPIKE.md, pure half byte-identical to the lead bridge):
+ * stone breaks arrive on {@link #onBreak} (Forge break events, server
+ * side, dim 0 only) into the bridge-owned {@link MinedStore}; every
+ * server tick {@link #repopTick} seals the store standalone beside no
+ * pack ({@link RepopSeal}, SPI untouched — the spike snapshot is
+ * pack-independent) and the pure {@link RepopJob} decides what is due
+ * back. Due cells land through {@link WorldCellSink}; a live
+ * claim-vs-decision divergence fails the tick loudly
+ * ({@code E_SPIKE_SEAL:diverged}, spike-tripwire shape). Repop delay
+ * {@code REPOP_DELAY = 200}, stone {@code REPOP_BLOCK =
+ * "minecraft:stone"} resolved fail-fast at setup
+ * ({@code E_SPIKE_STONE:unknown}); other dims/blocks are out of spike
+ * scope, never errors. New refusals stay spike-local ({@code E_SPIKE_*},
+ * never in the {@code E_FORGE_*} parity catalog), so bridge parity holds
+ * with behaviour intentionally 1201-only until proven.
  *
  * <p>Loot (event-sourced, hub decisions/LOOT.md, T1 any-kill-pays):
  * breaks of the operator wire blocks arrive on {@link #onHarvest} (Forge
@@ -182,6 +202,13 @@ public final class MatouBridgeMod {
     public static final String MODID = "matoubridge";
     static final String PACKS_PATH = "config/matoubridge/packs.cfg";
 
+    /** Spike-tuned repop delay: 200 ticks (10s at 20tps — human-visible
+     * in a live run, far below proof windows). A constant, never a
+     * default: the proof mines, waits, and watches this exact horizon. */
+    static final long REPOP_DELAY = 200L;
+    /** Spike scope: vanilla stone only. Other breaks are not the spike's
+     * business (metadata/T.E. restore is an explicit non-goal). */
+    static final String REPOP_BLOCK = "minecraft:stone";
     /** Loot scope: the operator wire blocks, resolved at wire time (T2
      * operator-override tranche, hub decisions/SPAWN.md — the packs.cfg
      * wire-block column names the ore, no bridge constant does; other
@@ -216,6 +243,9 @@ public final class MatouBridgeMod {
 
     private final List<PackWire> wires = new ArrayList<PackWire>();
     private final List<Packs.PackSpec> pending = new ArrayList<Packs.PackSpec>();
+    private final MinedStore mined = new MinedStore();
+    private final RepopJob repop = new RepopJob();
+    private Block stone;
     private final DropStore drops = new DropStore();
     private final LootJob loot = new LootJob();
     private final SpawnStore census = new SpawnStore();
@@ -233,29 +263,48 @@ public final class MatouBridgeMod {
     public MatouBridgeMod() {
         MinecraftForge.EVENT_BUS.register(this);
         File cfg = new File(PACKS_PATH);
-        if (!cfg.isFile()) {
-            return;
+        if (cfg.isFile()) {
+            List<String> lines;
+            try {
+                lines = Files.readAllLines(cfg.toPath(), StandardCharsets.UTF_8);
+            } catch (Exception e) {
+                throw new RuntimeException("E_FORGE_PACKS:unreadable <"
+                        + PACKS_PATH + "> (" + e.getMessage() + ")", e);
+            }
+            for (Packs.PackSpec spec : Packs.parseLines(lines)) {
+                pending.add(spec);
+            }
         }
-        List<String> lines;
-        try {
-            lines = Files.readAllLines(cfg.toPath(), StandardCharsets.UTF_8);
-        } catch (Exception e) {
-            throw new RuntimeException("E_FORGE_PACKS:unreadable <"
-                    + PACKS_PATH + "> (" + e.getMessage() + ")", e);
-        }
-        for (Packs.PackSpec spec : Packs.parseLines(lines)) {
-            pending.add(spec);
-        }
+        // Always bound (even packless): the repop spike is
+        // pack-independent (vanilla stone, standalone snapshot), so its
+        // stone resolve must land with or without a packs.cfg — the lead
+        // bridge resolves it before the config check for the same reason.
         FMLJavaModLoadingContext.get().getModEventBus().addListener(
                 (FMLCommonSetupEvent event) -> bindPending());
     }
 
     /**
-     * Setup-time bind: the deferred-registry fill already landed (one
-     * loading state ago), so custom names resolve here. A half-bound
-     * wire never ticks — refusal is loud, at setup, never silent.
+     * Setup-time bind: the stone resolve lands first (fail-fast
+     * {@code E_SPIKE_STONE:unknown} — a spike without its block refuses
+     * loudly, never records against null), then the deferred-registry
+     * fill already landed (one loading state ago), so custom names
+     * resolve here. A half-bound wire never ticks — refusal is loud, at
+     * setup, never silent.
      */
     private void bindPending() {
+        ResourceLocation stoneId = new ResourceLocation(REPOP_BLOCK);
+        // Presence first: getValue returns the registry default (air)
+        // for unknown names, never null (same probe as the loot ore
+        // resolve below).
+        if (!ForgeRegistries.BLOCKS.containsKey(stoneId)) {
+            throw new IllegalArgumentException("E_SPIKE_STONE:unknown <"
+                    + REPOP_BLOCK + ">");
+        }
+        stone = ForgeRegistries.BLOCKS.getValue(stoneId);
+        if (stone == null) {
+            throw new IllegalArgumentException("E_SPIKE_STONE:unknown <"
+                    + REPOP_BLOCK + ">");
+        }
         for (Packs.PackSpec spec : pending) {
             wires.add(PackWire.bind(spec));
         }
@@ -417,9 +466,52 @@ public final class MatouBridgeMod {
         for (PackWire wire : wires) {
             wire.applyTo(event.level, tick);
         }
+        repopTick(event.level, tick);
         lootTick(event.level, tick);
         spawnTick(event.level, tick);
         tick++;
+    }
+
+    /**
+     * Spike record: a server-side dim-0 stone break becomes a mined cell
+     * at the last server tick (same clock the per-tick seal reads — both
+     * run on the server thread). Client-side echoes (isClientSide) are
+     * ignored: the server fires its own event for the same break. Other
+     * dims and non-stone blocks are out of spike scope, never errors
+     * (hub decisions/REPOP_SPIKE.md).
+     */
+    @SubscribeEvent
+    public void onBreak(BlockEvent.BreakEvent event) {
+        LevelAccessor w = event.getLevel();
+        if (!(w instanceof ServerLevel)) {
+            return;
+        }
+        ServerLevel level = (ServerLevel) w;
+        // Owner discipline (measured live on 1201 loot: NoSuchMethodError
+        // ServerLevel.isClientSide — Reobf maps the exact bytecode owner,
+        // so inherited vanilla members go through the declaring Level
+        // type, never the narrowed ServerLevel — same upcast as onHarvest).
+        Level lvl = level;
+        if (lvl.isClientSide()) {
+            return;
+        }
+        if (!Level.OVERWORLD.equals(lvl.dimension())) {
+            return;
+        }
+        // Owner discipline (hub decisions/LOOT.md): coords go through the
+        // declaring Vec3i type and the block through the declaring
+        // BlockStateBase type — the hierarchy walk only maps the exact
+        // bytecode owner.
+        BlockBehaviour.BlockStateBase s = event.getState();
+        if (s.getBlock() != stone) {
+            return;
+        }
+        Vec3i p = event.getPos();
+        String cell = Cell.of(p.getX(), p.getY(), p.getZ(),
+                REPOP_BLOCK).render();
+        mined.record(cell, tick);
+        System.out.println("[MatouBridge] spike recorded <" + cell
+                + "> at tick " + tick);
     }
 
     /**
@@ -703,6 +795,30 @@ public final class MatouBridgeMod {
                     + "," + y + "," + z + ">");
         }
         census.record(Integer.toString(body.getId()), cell, now);
+    }
+
+    /**
+     * Spike seal: store sealed standalone (pack-independent), pure
+     * decide, land due cells, evict claimed. The store-vs-job equality
+     * the etage-1 gate holds is re-checked loudly here: a live
+     * divergence (claimed != due) fails the tick instead of leaking
+     * mined cells silently.
+     */
+    private void repopTick(Level level, long now) {
+        Map<MatouId, Object> states = RepopSeal.seal(mined, REPOP_DELAY);
+        Snapshot snap = ForgeSnapshot.snapshot(now, states);
+        List<String> due = repop.decide(snap);
+        if (!due.isEmpty()) {
+            ForgeCells.applyCells(due,
+                    new WorldCellSink(level, 0, stone));
+            System.out.println("[MatouBridge] spike repopped "
+                    + due.size() + " cell(s) at tick " + now);
+        }
+        List<String> claimed = mined.claimDue(now, REPOP_DELAY);
+        if (!claimed.equals(due)) {
+            throw new IllegalStateException("E_SPIKE_SEAL:diverged <due="
+                    + due + " claimed=" + claimed + "> at tick " + now);
+        }
     }
 
     /**
