@@ -5,16 +5,16 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.level.Level;
 
 /**
- * Loot-proof compile stub (DEV ONLY): shape-only 1.20.1 (Mojmap) vanilla
- * API used by the autoplay companion (tools/autoplay/, never shipped).
- * Never runs (compile classpath only). The T1 victim is a vanilla pig
- * until custom-entity registration lands (hub decisions/LOOT.md): the
- * companion spawns one through this ctor (measured via server.txt:
- * public {@code (EntityType,Level)} — ctors are never obfuscated, so no
- * narrow-map row). A {@code LivingEntity} for the simulated kill post.
+ * Spawn compile stub: shape-only 1.20.1 (Mojmap) vanilla API used by
+ * {@code forge/} sources. Never runs (compile classpath only). The T1
+ * victim/host is a vanilla pig until custom-entity registration lands
+ * (hub decisions/SPAWN.md): the bridge lands one through this ctor
+ * (measured via server.txt: public {@code (EntityType,Level)} -- ctors
+ * are never obfuscated, so no narrow-map row; the 1.12 no-arg shape does
+ * not port, the type arrives through {@code EntityType.PIG}). A
+ * {@code LivingEntity} for the hp seam and the kill post.
  */
 public class Pig extends LivingEntity {
-    @SuppressWarnings({"unchecked", "rawtypes"})
     public Pig(EntityType<? extends Pig> type, Level level) {
     }
 }

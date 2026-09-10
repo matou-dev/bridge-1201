@@ -43,4 +43,24 @@ public class Entity {
 
     public void discard() {
     }
+
+    /**
+     * Spawn shape (hub decisions/SPAWN.md, T1 vanilla host): the census
+     * id goes through {@code getId}, the living check through
+     * {@code isAlive}, landings position through {@code moveTo} (the 1.12
+     * {@code getEntityId} / {@code isDead} / {@code setPositionAndRotation}
+     * shapes do not port -- measured via server.txt + joined.tsrg v2 +
+     * javap, same practice). Pinned by tools/run-live.sh (narrow map).
+     */
+    public int getId() {
+        return 0;
+    }
+
+    public boolean isAlive() {
+        return false;
+    }
+
+    public void moveTo(double x, double y, double z, float yaw,
+            float pitch) {
+    }
 }

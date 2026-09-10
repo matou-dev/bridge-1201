@@ -185,7 +185,11 @@ echo "ok d3-live : server provisioned (pins verified)"
 #    registration tranche: Properties.of, strength, plus the loot tranche:
 #    ServerLevel/addFreshEntity, Entity/level/getX/getY/getZ,
 #    Level/isClientSide, Vec3i/getX/getY/getZ,
-#    BlockStateBase/getBlock, Items/DIAMOND).
+#    BlockStateBase/getBlock, Items/DIAMOND, plus the spawn tranche:
+#    Entity/getId/isAlive/moveTo, LivingEntity/getAttribute/setHealth/
+#    getMaxHealth, AttributeInstance/setBaseValue,
+#    EntityGetter/getEntitiesOfClass, EntityType/PIG,
+#    Attributes/MAX_HEALTH).
 #    Production classes stay Mojmap (installer MERGE_MAPPING keeps classes
 #    official) — only members reobfuscate, so no class lines are needed.
 python3 - "$D3_DIR/mcp_config-1.20.1-20230612.114412.zip" "$D3_DIR/server-mappings.txt" "$MC_INNER" "$J17/javap" "$D3_DIR/srg-narrow.srg" <<'EOF'
@@ -310,12 +314,32 @@ WANT_METHODS = [
      "()I", False),
     ("net/minecraft/world/level/block/state/BlockBehaviour$BlockStateBase", "getBlock",
      "()Lnet/minecraft/world/level/block/Block;", False),
+    ("net/minecraft/world/entity/Entity", "getId",
+     "()I", False),
+    ("net/minecraft/world/entity/Entity", "isAlive",
+     "()Z", False),
+    ("net/minecraft/world/entity/Entity", "moveTo",
+     "(DDDFF)V", False),
+    ("net/minecraft/world/entity/LivingEntity", "getAttribute",
+     "(Lnet/minecraft/world/entity/ai/attributes/Attribute;)Lnet/minecraft/world/entity/ai/attributes/AttributeInstance;", False),
+    ("net/minecraft/world/entity/LivingEntity", "setHealth",
+     "(F)V", False),
+    ("net/minecraft/world/entity/LivingEntity", "getMaxHealth",
+     "()F", False),
+    ("net/minecraft/world/entity/ai/attributes/AttributeInstance", "setBaseValue",
+     "(D)V", False),
+    ("net/minecraft/world/level/EntityGetter", "getEntitiesOfClass",
+     "(Ljava/lang/Class;Lnet/minecraft/world/phys/AABB;)Ljava/util/List;", False),
 ]
 WANT_FIELDS = [
     ("net/minecraft/world/level/Level", "OVERWORLD",
      "Lnet/minecraft/resources/ResourceKey;", True),
     ("net/minecraft/world/item/Items", "DIAMOND",
      "Lnet/minecraft/world/item/Item;", True),
+    ("net/minecraft/world/entity/EntityType", "PIG",
+     "Lnet/minecraft/world/entity/EntityType;", True),
+    ("net/minecraft/world/entity/ai/attributes/Attributes", "MAX_HEALTH",
+     "Lnet/minecraft/world/entity/ai/attributes/Attribute;", True),
 ]
 
 PRIM = {"B": "byte", "C": "char", "D": "double", "F": "float",
@@ -385,7 +409,7 @@ for owner, mcp, ftype, want_static in WANT_FIELDS:
     assert flags.get((obf_name, "F:" + ftype_obf)) == want_static, \
         "E_SRG_DERIVE:javap mismatch field <%s %s>" % (obf_owner, obf_name)
     lines.append("FD: %s/%s %s/%s" % (obf2srg[obf_owner], tm[0]["srg"], owner, mcp))
-assert len(lines) == 17, "E_SRG_DERIVE:want 17 lines, got %d" % len(lines)
+assert len(lines) == 27, "E_SRG_DERIVE:want 27 lines, got %d" % len(lines)
 open(outpath, "w").write("\n".join(lines) + "\n")
 print("ok d3-live : narrow SRG derived (%d lines)" % len(lines))
 EOF
@@ -417,9 +441,19 @@ pin_method "net/minecraft/core/Vec3i/getX" "()I"
 pin_method "net/minecraft/core/Vec3i/getY" "()I"
 pin_method "net/minecraft/core/Vec3i/getZ" "()I"
 pin_method "net/minecraft/world/level/block/state/BlockBehaviour\$BlockStateBase/getBlock" "()Lnet/minecraft/world/level/block/Block;"
+pin_method "net/minecraft/world/entity/Entity/getId" "()I"
+pin_method "net/minecraft/world/entity/Entity/isAlive" "()Z"
+pin_method "net/minecraft/world/entity/Entity/moveTo" "(DDDFF)V"
+pin_method "net/minecraft/world/entity/LivingEntity/getAttribute" "(Lnet/minecraft/world/entity/ai/attributes/Attribute;)Lnet/minecraft/world/entity/ai/attributes/AttributeInstance;"
+pin_method "net/minecraft/world/entity/LivingEntity/setHealth" "(F)V"
+pin_method "net/minecraft/world/entity/LivingEntity/getMaxHealth" "()F"
+pin_method "net/minecraft/world/entity/ai/attributes/AttributeInstance/setBaseValue" "(D)V"
+pin_method "net/minecraft/world/level/EntityGetter/getEntitiesOfClass" "(Ljava/lang/Class;Lnet/minecraft/world/phys/AABB;)Ljava/util/List;"
 pin_field "net/minecraft/world/item/Items/DIAMOND"
-[ "$(grep -c . "$SRG_NARROW")" = "17" ] \
-  || { echo "FAIL d3-live : narrow map drift (want 17 lines)"; exit 1; }
+pin_field "net/minecraft/world/entity/EntityType/PIG"
+pin_field "net/minecraft/world/entity/ai/attributes/Attributes/MAX_HEALTH"
+[ "$(grep -c . "$SRG_NARROW")" = "27" ] \
+  || { echo "FAIL d3-live : narrow map drift (want 27 lines)"; exit 1; }
 echo "ok d3-live : stubs pinned to derived SRG"
 
 # 2c. Pin every stubbed member against the provisioned jars. Forge classes
@@ -453,6 +487,9 @@ pin_uni 'net.minecraftforge.event.level.BlockEvent' 'getState('
 pin_uni 'net.minecraftforge.event.level.BlockEvent$BreakEvent' 'BreakEvent('
 pin_uni 'net.minecraftforge.event.entity.living.LivingEvent' 'getEntity('
 pin_uni 'net.minecraftforge.event.entity.living.LivingDropsEvent' 'LivingDropsEvent('
+pin_uni 'net.minecraftforge.event.entity.EntityJoinLevelEvent' 'EntityJoinLevelEvent('
+pin_uni 'net.minecraftforge.event.entity.EntityJoinLevelEvent' 'getLevel('
+pin_uni 'net.minecraftforge.event.entity.EntityEvent' 'getEntity('
 pin_game() {
   "$J17/javap" -p -cp "$SRG_GAME" "$1" 2>/dev/null | grep -q "$2" \
     || { echo "FAIL d3-live : game pin unmet <$1 :: $2>"; exit 1; }
@@ -472,6 +509,7 @@ pin_lib 'net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext' "$JMLLANG" 
 pin_lib 'net.minecraftforge.eventbus.api.SubscribeEvent' "$EVENTBUS" 'SubscribeEvent'
 pin_lib 'net.minecraftforge.eventbus.api.IEventBus' "$EVENTBUS" 'register('
 pin_lib 'net.minecraftforge.eventbus.api.IEventBus' "$EVENTBUS" 'addListener('
+pin_lib 'net.minecraftforge.eventbus.api.Event' "$EVENTBUS" 'setCanceled('
 echo "ok d3-live : forge stubs pinned to provisioned jars"
 
 # 3. Build all mod jars with Java 17 (--release 8 keeps the dual-runtime
@@ -658,9 +696,9 @@ echo "ok d3-live : server ran ($BOOT_SECS s)"
 #    the rolling server log — Forge splits output across both).
 LOGS="$SERV/boot-d3.log"
 [ -f "$SERV/logs/latest.log" ] && LOGS="$LOGS $SERV/logs/latest.log"
-if grep -a -q "NoSuchMethodError\|NoSuchFieldError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|E_LOOT\|Encountered an unexpected exception" $LOGS; then
+if grep -a -q "NoSuchMethodError\|NoSuchFieldError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|E_LOOT\|E_SPAWN\|Encountered an unexpected exception" $LOGS; then
   echo "FAIL d3-live : runtime refusal (see $SERV/boot-d3.log)"
-  grep -a -m5 "NoSuchMethodError\|NoSuchFieldError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|E_LOOT\|Caused by" $LOGS
+  grep -a -m5 "NoSuchMethodError\|NoSuchFieldError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|E_LOOT\|E_SPAWN\|Caused by" $LOGS
   exit 1
 fi
 grep -a -q "matoubridge" $LOGS \

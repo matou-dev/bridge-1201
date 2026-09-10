@@ -13,6 +13,7 @@ import net.minecraftforge.event.entity.EntityEvent;
  */
 public class LivingEvent extends EntityEvent {
     public LivingEvent(LivingEntity entity) {
+        super(entity);
     }
 
     public LivingEntity getEntity() {
