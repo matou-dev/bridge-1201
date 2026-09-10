@@ -52,9 +52,9 @@ public final class Example1Mod {
      * bind-time resolve owns them, unchanged. A missing packs.cfg stays
      * passive (Q1 cohabitation), same as the bridge init. Registration
      * itself lands at the registry event, before common setup; binds
-     * resolving these names must run at/after setup (the live tranche
-     * moves {@code MatouBridgeMod} binds there — E0 owns
-     * queue+register+verify only).
+     * resolving these names run at/after setup ({@code MatouBridgeMod}
+     * binds in its own setup listener — the deferred fill lands one
+     * loading state earlier, whatever the mod order).
      */
     public Example1Mod() {
         BLOCKS.register(
@@ -119,8 +119,8 @@ public final class Example1Mod {
         if (REGISTERED.containsKey(want) || pendingContains(want)) {
             return;
         }
-        if (ForgeRegistries.BLOCKS.getValue(
-                new ResourceLocation(want)) != null) {
+        if (ForgeRegistries.BLOCKS.containsKey(
+                new ResourceLocation(want))) {
             throw new IllegalArgumentException(
                     "E_REG_DUP:already registered <" + want + ">");
         }

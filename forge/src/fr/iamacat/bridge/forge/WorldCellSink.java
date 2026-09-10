@@ -67,8 +67,14 @@ public final class WorldCellSink implements CellSink {
         checkY(y);
         Block at = resolved.get(blockName);
         if (at == null) {
-            at = ForgeRegistries.BLOCKS.getValue(
-                    new ResourceLocation(blockName));
+            ResourceLocation id = new ResourceLocation(blockName);
+            // Presence first: getValue returns the registry default
+            // (air) for unknown names, never null — see PackWire.
+            if (!ForgeRegistries.BLOCKS.containsKey(id)) {
+                throw new IllegalArgumentException(
+                        "E_FORGE_BLOCK:unknown <" + blockName + ">");
+            }
+            at = ForgeRegistries.BLOCKS.getValue(id);
             if (at == null) {
                 throw new IllegalArgumentException(
                         "E_FORGE_BLOCK:unknown <" + blockName + ">");

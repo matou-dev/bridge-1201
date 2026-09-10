@@ -12,6 +12,28 @@ import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.LogicalSide;
 import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
+import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
+
+/**
+ * D1 Forge wiring (47.2.0): FML level tick in, pure SPI decide,
+ * bridge-owned apply. Packs come from {@code config/matoubridge/packs.cfg}
+ * (one {@code <class> <y> <block> [k=v ...]} per line); a missing file
+ * means no packs, staying passive (Q1 cohabitation). Malformed config or
+ * unloadable pack fails fast at setup — a half-wired bridge never
+ * ticks.
+ *
+ * <p>Bind timing (hub decisions/REGISTRATION.md): deferred registries
+ * fill at the registry event, after every mod constructs and before any
+ * common setup — so a constructor-time {@code PackWire.bind} would
+ * resolve a custom name before it exists and refuse loudly on a correct
+ * config. Specs parse in the constructor (pure, no registry), binds land
+ * in a common-setup listener, at/after the fill, whatever the mod order.
+ *
+ * <p>Only this package may touch MC/Forge; the decide/apply seam
+ * ({@code fr.iamacat.bridge}) ships from {@code matou-spi} (see
+ * {@code SPI_PIN}).
+ */
 
 /**
  * D1 Forge wiring (47.2.0): FML level tick in, pure SPI decide,
@@ -31,6 +53,7 @@ public final class MatouBridgeMod {
     static final String PACKS_PATH = "config/matoubridge/packs.cfg";
 
     private final List<PackWire> wires = new ArrayList<PackWire>();
+    private final List<Packs.PackSpec> pending = new ArrayList<Packs.PackSpec>();
     private long tick;
 
     public MatouBridgeMod() {
@@ -47,8 +70,22 @@ public final class MatouBridgeMod {
                     + PACKS_PATH + "> (" + e.getMessage() + ")", e);
         }
         for (Packs.PackSpec spec : Packs.parseLines(lines)) {
+            pending.add(spec);
+        }
+        FMLJavaModLoadingContext.get().getModEventBus().addListener(
+                (FMLCommonSetupEvent event) -> bindPending());
+    }
+
+    /**
+     * Setup-time bind: the deferred-registry fill already landed (one
+     * loading state ago), so custom names resolve here. A half-bound
+     * wire never ticks — refusal is loud, at setup, never silent.
+     */
+    private void bindPending() {
+        for (Packs.PackSpec spec : pending) {
             wires.add(PackWire.bind(spec));
         }
+        pending.clear();
     }
 
     @SubscribeEvent

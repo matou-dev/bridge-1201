@@ -181,7 +181,8 @@ echo "ok d3-live : server provisioned (pins verified)"
 #    vanilla server jar disambiguates via javap (exactly-one assert per
 #    member, loud otherwise). The map covers every vanilla member our
 #    forge/ bytecode references (verified by constant-pool scan at D3 time:
-#    setBlock, dimension, OVERWORLD, defaultBlockState).
+#    setBlock, dimension, OVERWORLD, defaultBlockState, plus the
+#    registration tranche: Properties.of, strength).
 #    Production classes stay Mojmap (installer MERGE_MAPPING keeps classes
 #    official) — only members reobfuscate, so no class lines are needed.
 python3 - "$D3_DIR/mcp_config-1.20.1-20230612.114412.zip" "$D3_DIR/server-mappings.txt" "$MC_INNER" "$J17/javap" "$D3_DIR/srg-narrow.srg" <<'EOF'
@@ -264,7 +265,11 @@ def javap_flags(cls):
                 static = bool(re.search(r"\bstatic\b", s.split("(")[0]))
                 name = m.group(1)
             elif "(" not in s and s.endswith(";") and "{" not in s:
-                m2 = re.match(r"(?:(.*)\s)?([\w.$\[\]<>, ]+?)\s+([\w$]+);", s)
+                # Field type class carries `?` for javap-printed wildcards
+                # (a generic Function field in BlockBehaviour$Properties —
+                # measured, not assumed: the pre-fix class failed loud
+                # here, same family as the 1165 wildcard finding).
+                m2 = re.match(r"(?:(.*)\s)?([\w.$\[\]<>, ?]+?)\s+([\w$]+);", s)
                 assert m2, "E_SRG_DERIVE:unparsed javap line <%s> in <%s>" % (s, cls)
                 static = bool(re.search(r"\bstatic\b", m2.group(1) or ""))
                 name = m2.group(3)
@@ -278,6 +283,10 @@ WANT_METHODS = [
      "()Lnet/minecraft/resources/ResourceKey;", False),
     ("net/minecraft/world/level/block/Block", "defaultBlockState",
      "()Lnet/minecraft/world/level/block/state/BlockState;", False),
+    ("net/minecraft/world/level/block/state/BlockBehaviour$Properties", "of",
+     "()Lnet/minecraft/world/level/block/state/BlockBehaviour$Properties;", True),
+    ("net/minecraft/world/level/block/state/BlockBehaviour$Properties", "strength",
+     "(F)Lnet/minecraft/world/level/block/state/BlockBehaviour$Properties;", False),
 ]
 WANT_FIELDS = [
     ("net/minecraft/world/level/Level", "OVERWORLD",
@@ -351,14 +360,14 @@ for owner, mcp, ftype, want_static in WANT_FIELDS:
     assert flags.get((obf_name, "F:" + ftype_obf)) == want_static, \
         "E_SRG_DERIVE:javap mismatch field <%s %s>" % (obf_owner, obf_name)
     lines.append("FD: %s/%s %s/%s" % (obf2srg[obf_owner], tm[0]["srg"], owner, mcp))
-assert len(lines) == 4, "E_SRG_DERIVE:want 4 lines, got %d" % len(lines)
+assert len(lines) == 6, "E_SRG_DERIVE:want 6 lines, got %d" % len(lines)
 open(outpath, "w").write("\n".join(lines) + "\n")
 print("ok d3-live : narrow SRG derived (%d lines)" % len(lines))
 EOF
 SRG_NARROW="$D3_DIR/srg-narrow.srg"
 # 2b. Pin every derived line: a derivation the SRG does not confirm is a loud
 #     failure, never a silent default. Production classes stay Mojmap — only
-#     these 4 members reobfuscate, exactly.
+#     these 6 members reobfuscate, exactly.
 pin_method() {
   grep -q "^MD: [^ ]* [^ ]* $1 $2\$" "$SRG_NARROW" \
     || { echo "FAIL d3-live : stub member unpinned <$1 $2>"; exit 1; }
@@ -370,9 +379,11 @@ pin_field() {
 pin_method "net/minecraft/world/level/Level/setBlock" "(Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;I)Z"
 pin_method "net/minecraft/world/level/Level/dimension" "()Lnet/minecraft/resources/ResourceKey;"
 pin_method "net/minecraft/world/level/block/Block/defaultBlockState" "()Lnet/minecraft/world/level/block/state/BlockState;"
+pin_method "net/minecraft/world/level/block/state/BlockBehaviour\$Properties/of" "()Lnet/minecraft/world/level/block/state/BlockBehaviour\$Properties;"
+pin_method "net/minecraft/world/level/block/state/BlockBehaviour\$Properties/strength" "(F)Lnet/minecraft/world/level/block/state/BlockBehaviour\$Properties;"
 pin_field "net/minecraft/world/level/Level/OVERWORLD"
-[ "$(grep -c . "$SRG_NARROW")" = "4" ] \
-  || { echo "FAIL d3-live : narrow map drift (want 4 lines)"; exit 1; }
+[ "$(grep -c . "$SRG_NARROW")" = "6" ] \
+  || { echo "FAIL d3-live : narrow map drift (want 6 lines)"; exit 1; }
 echo "ok d3-live : stubs pinned to derived SRG"
 
 # 2c. Pin every stubbed member against the provisioned jars. Forge classes
@@ -394,6 +405,12 @@ pin_uni 'net.minecraftforge.event.TickEvent$Phase' 'END'
 pin_uni 'net.minecraftforge.common.MinecraftForge' 'EVENT_BUS'
 pin_uni 'net.minecraftforge.registries.ForgeRegistries' 'BLOCKS'
 pin_uni 'net.minecraftforge.registries.IForgeRegistry' 'getValue('
+pin_uni 'net.minecraftforge.registries.IForgeRegistry' 'containsKey('
+pin_uni 'net.minecraftforge.registries.DeferredRegister' 'create('
+pin_uni 'net.minecraftforge.registries.DeferredRegister' 'register('
+pin_uni 'net.minecraftforge.registries.RegistryObject' 'get('
+pin_uni 'net.minecraftforge.registries.RegistryObject' 'getId('
+pin_uni 'net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent' 'FMLCommonSetupEvent('
 pin_game() {
   "$J17/javap" -p -cp "$SRG_GAME" "$1" 2>/dev/null | grep -q "$2" \
     || { echo "FAIL d3-live : game pin unmet <$1 :: $2>"; exit 1; }
@@ -408,8 +425,11 @@ pin_lib() {
 }
 pin_lib 'net.minecraftforge.fml.LogicalSide' "$FMLCORE" 'SERVER'
 pin_lib 'net.minecraftforge.fml.common.Mod' "$JMLLANG" 'value()'
+pin_lib 'net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext' "$JMLLANG" 'get()'
+pin_lib 'net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext' "$JMLLANG" 'getModEventBus('
 pin_lib 'net.minecraftforge.eventbus.api.SubscribeEvent' "$EVENTBUS" 'SubscribeEvent'
 pin_lib 'net.minecraftforge.eventbus.api.IEventBus' "$EVENTBUS" 'register('
+pin_lib 'net.minecraftforge.eventbus.api.IEventBus' "$EVENTBUS" 'addListener('
 echo "ok d3-live : forge stubs pinned to provisioned jars"
 
 # 3. Build all mod jars with Java 17 (--release 8 keeps the dual-runtime
@@ -494,7 +514,7 @@ echo "ok d3-live : jars built (VERSION=$VERSION)"
 #    equivalent: production vanilla declares SRG member names, so
 #    un-reobfed jars die with NoSuchMethodError — found live in B3, never
 #    again silently). Classes stay Mojmap (production classes are Mojmap),
-#    so only the 4 narrow-map members move; Forge refs pass through
+#    so only the 6 narrow-map members move; Forge refs pass through
 #    untouched (never obfuscated).
 "$J17/javac" --release 8 -nowarn -cp "$ASM:$ASM_COMMONS" -d "$BLD" tools/live/Reobf.java
 "$J17/java" -cp "$BLD:$ASM:$ASM_COMMONS" Reobf "$SRG_NARROW" "$BLD/jars/matoubridge.jar" "$BLD/jars/matoubridge-reobf.jar"
@@ -557,7 +577,7 @@ if [ "${BUILD_ONLY:-}" = "1" ]; then
   cp "$BLD/jars/matou-minimap.jar" "dist/matou-minimap-$VERSION.jar"
   cp "$BLD/jars/matoubridge-reobf.jar" "dist/matoubridge-$VERSION.jar"
   cp ../example1/content/owned.matou ../example1/content/additive.matou ../example1/content/structure.matou dist/matou-content/
-  printf '# Copy to <server>/config/matoubridge/packs.cfg and replace <SERVER>.\n# Wire y=63 keeps plane cells on their own slice, off the structure slices (64..65).\nfr.iamacat.example1.ExamplePack 63 minecraft:stone ownedFile=<SERVER>/matou-content/owned.matou scatterFile=<SERVER>/matou-content/additive.matou structureFile=<SERVER>/matou-content/structure.matou block.example1.structures:hut_wall=minecraft:stone block.example1.structures:hut_roof=minecraft:stone\n' > dist/packs.cfg.example
+  printf '# Copy to <server>/config/matoubridge/packs.cfg and replace <SERVER>.\n# Wire y=63 keeps plane cells on their own slice, off the structure slices (64..65).\n# The wire block is the registered custom ore (DeferredRegister queues example1:my_ore from owned.matou, the fill lands before setup binds resolve it); aliases stay vanilla stone.\nfr.iamacat.example1.ExamplePack 63 example1:my_ore ownedFile=<SERVER>/matou-content/owned.matou scatterFile=<SERVER>/matou-content/additive.matou structureFile=<SERVER>/matou-content/structure.matou block.example1.structures:hut_wall=minecraft:stone block.example1.structures:hut_roof=minecraft:stone\n' > dist/packs.cfg.example
   (cd dist && sha256sum "matou-spi-$VERSION.jar" "matou-example1-$VERSION.jar" "matou-minimap-$VERSION.jar" "matoubridge-$VERSION.jar" matou-content/owned.matou matou-content/additive.matou matou-content/structure.matou packs.cfg.example > SHA256SUMS.txt)
   (cd dist && sha256sum -c SHA256SUMS.txt)
   echo "ok r2-release : dist/ assembled (VERSION=$VERSION)"
@@ -572,8 +592,11 @@ cp "$BLD/jars/matoubridge-reobf.jar" "$SERV/mods/matoubridge.jar"
 rm -rf "$SERV/matou-content" && cp -r ../example1/content "$SERV/matou-content"
 # Wire y=63: plane cells stay on their own slice, off the structure
 # slices (64..65), so the verdict stays per-shape sensitive despite the
-# set collapse (a 2D and a 3D cell can share x,z, never y).
-printf 'fr.iamacat.example1.ExamplePack 63 minecraft:stone ownedFile=%s/matou-content/owned.matou scatterFile=%s/matou-content/additive.matou structureFile=%s/matou-content/structure.matou block.example1.structures:hut_wall=minecraft:stone block.example1.structures:hut_roof=minecraft:stone\n' "$SERV" "$SERV" "$SERV" > "$SERV/config/matoubridge/packs.cfg"
+# set collapse (a 2D and a 3D cell can share x,z, never y). The wire
+# block is the registered custom ore (the constructor queues it from
+# owned.matou, the deferred fill registers it before setup binds
+# resolve it).
+printf 'fr.iamacat.example1.ExamplePack 63 example1:my_ore ownedFile=%s/matou-content/owned.matou scatterFile=%s/matou-content/additive.matou structureFile=%s/matou-content/structure.matou block.example1.structures:hut_wall=minecraft:stone block.example1.structures:hut_roof=minecraft:stone\n' "$SERV" "$SERV" "$SERV" > "$SERV/config/matoubridge/packs.cfg"
 echo "eula=true" > "$SERV/eula.txt"
 printf 'online-mode=false\nlevel-type=minecraft:flat\ngamemode=1\ndifficulty=0\nmotd=D3 live proof\nmax-tick-time=-1\n' > "$SERV/server.properties"
 rm -rf "$SERV/world" "$SERV/logs"
@@ -588,17 +611,25 @@ echo "ok d3-live : server ran ($BOOT_SECS s)"
 #    the rolling server log — Forge splits output across both).
 LOGS="$SERV/boot-d3.log"
 [ -f "$SERV/logs/latest.log" ] && LOGS="$LOGS $SERV/logs/latest.log"
-if grep -a -q "NoSuchMethodError\|NoSuchFieldError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|Encountered an unexpected exception" $LOGS; then
+if grep -a -q "NoSuchMethodError\|NoSuchFieldError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|Encountered an unexpected exception" $LOGS; then
   echo "FAIL d3-live : runtime refusal (see $SERV/boot-d3.log)"
-  grep -a -m5 "NoSuchMethodError\|NoSuchFieldError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|Caused by" $LOGS
+  grep -a -m5 "NoSuchMethodError\|NoSuchFieldError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|Caused by" $LOGS
   exit 1
 fi
 grep -a -q "matoubridge" $LOGS \
   || { echo "FAIL d3-live : mod never loaded"; exit 1; }
 echo "ok d3-live : bind clean, ticks clean"
+# Registration proof: the setup-time verify line carries the registry key
+# (1.20.1 has no numeric block ids — the anvil probe reads namespaced
+# names, and this line proves the custom name resolved through the
+# registry, never defaulted).
+grep -a -q '\[MatouBridge\] registered <example1:my_ore> id example1:my_ore' $LOGS \
+  || { echo "FAIL d3-live : my_ore registration line absent from boot log (deferred fill never registered? see $SERV/boot-d3.log)"; exit 1; }
+echo "ok d3-live : my_ore registered ($(grep -a -o '\[MatouBridge\] registered <example1:my_ore> id [^ ]*' $LOGS | tail -n 1))"
 
 # 7. Positive proof: world blocks in chunks (0..1, -1..1) at y=63..65 must
-#    equal the pure decision union — stone only, nothing foreign, nothing
+#    equal the pure decision union — plane cells carry the registered
+#    custom ore, volume cells their alias stone, nothing foreign, nothing
 #    missing. Plane cells land at the wire y=63, volume cells at their own
 #    y=64..65; structure offsets reach x,z=17, and the hut anchor z=-4
 #    spills into chunk row -1 (region r.0.-1.mca) — hence the 6-chunk,
@@ -620,37 +651,50 @@ for spec in "r.0.0.mca 0 0" "r.0.0.mca 1 0" "r.0.0.mca 0 1" \
 done
 python3 - "$BLD/union.txt" "$BLD/world.txt" "$SERV/config/matoubridge/packs.cfg" <<'EOF'
 import sys
-wire_y = None
+# Names resolve through packs.cfg itself (wire block plus every
+# block.<ref>=<name> alias value) — never hardcoded, never guessed. A
+# world name outside that set fails loudly (extend the wire explicitly).
+wire_y, wire_block, allowed = None, None, set()
 for line in open(sys.argv[3]):
     line = line.strip()
     if line and not line.startswith("#"):
-        wire_y = int(line.split()[1])
+        toks = line.split()
+        wire_y, wire_block = int(toks[1]), toks[2]
+        allowed.add(wire_block)
+        for tok in toks[3:]:
+            if tok.startswith("block.") and "=" in tok:
+                allowed.add(tok.split("=", 1)[1])
 if wire_y is None:
     print("FAIL d3-live : no wire in packs.cfg")
     sys.exit(1)
-u = set()
+u = {}
 for line in open(sys.argv[1]):
     cell = line.split()[0]
-    if ":" in cell:
-        x, rest = cell.split(",", 1)
-        y, z = rest.split(",", 1)[0], rest.split(",", 1)[1].split(":")[0]
-        u.add((int(x), int(y), int(z)))
+    parts = cell.split(",")
+    if len(parts) == 3 and ":" in parts[2]:
+        z, bname = parts[2].split(":", 1)
+        pos = (int(parts[0]), int(parts[1]), int(z))
     else:
         x, z = cell.split(",")
-        u.add((int(x), wire_y, int(z)))
+        pos, bname = (int(x), wire_y, int(z)), wire_block
+    if bname not in allowed:
+        print("FAIL d3-live : union block <%s> outside packs.cfg set (extend the wire, never guess)" % bname)
+        sys.exit(1)
+    u[pos] = bname
 rows = [l.split() for l in open(sys.argv[2])]
-w = {(int(x), int(y), int(z)): i for x, y, z, i in rows}
+w = {(int(x), int(y), int(z)): n for x, y, z, n in rows}
 if not w:
     print("FAIL d3-live : world empty at y=63..65 (no tick applied?)")
     sys.exit(1)
-if set(w.values()) != {"minecraft:stone"}:
-    print("FAIL d3-live : foreign blocks %s" % sorted(set(w.values())))
+if set(w.values()) - allowed:
+    print("FAIL d3-live : foreign blocks %s" % sorted(set(w.values()) - allowed))
     sys.exit(1)
-if set(w) - u:
-    print("FAIL d3-live : world cells outside pure union %s" % sorted(set(w) - u)[:5])
+bad = {p: (w[p], u.get(p)) for p in w if u.get(p) != w[p]}
+if bad:
+    print("FAIL d3-live : name mismatch at %s (want pure union names)" % sorted(bad.items())[:5])
     sys.exit(1)
-if u - set(w):
-    print("FAIL d3-live : pure cells missing from world (%d)" % len(u - set(w)))
+if u.keys() - w.keys():
+    print("FAIL d3-live : pure cells missing from world (%d)" % len(u.keys() - w.keys()))
     sys.exit(1)
-print("ok d3-live : world == pure union (%d cells, stone only)" % len(w))
+print("ok d3-live : world == pure union (%d cells, names %s)" % (len(w), sorted(set(w.values()))))
 EOF
