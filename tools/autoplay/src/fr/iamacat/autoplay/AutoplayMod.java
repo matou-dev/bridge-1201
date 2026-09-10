@@ -2,6 +2,8 @@ package fr.iamacat.autoplay;
 
 import java.util.ArrayList;
 import java.util.List;
+import fr.iamacat.bridge.forge.Example1Mod;
+import fr.iamacat.bridge.forge.MatouEntity;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
@@ -9,7 +11,6 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.entity.animal.Pig;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
@@ -56,12 +57,11 @@ import net.minecraftforge.registries.ForgeRegistries;
  * server-level ticks the companion harvests the registered ore at an
  * isolated coords outside the union slices (8,10,8 — place + clear + a
  * {@code BreakEvent} post authored by the joined player, spike honesty
- * standard) and, five ticks later, kills a spawned vanilla pig at
- * (12,10,8) with a simulated {@code LivingDropsEvent} post (T1
- * any-kill-pays — hub decisions/LOOT.md; the species narrows when
- * custom-entity registration lands) — then polls both spots for the
- * diamond carrier the bridge loot sink spawns per due drop. The posts
- * are simulated, honestly: place + clear + bus posts exercise the
+ * standard) and, five ticks later, kills the spawned registered beast at
+ * (12,10,8) with a simulated {@code LivingDropsEvent} post
+ * (single-table scope — hub decisions/LOOT.md) — then polls both spots
+ * for the diamond carrier the bridge loot sink spawns per due drop. The
+ * posts are simulated, honestly: place + clear + bus posts exercise the
  * shipped hooks ({@code onHarvest} reads the level/dim/block through the
  * 47.2.0 shapes; {@code onKill} reads the entity only) through the live
  * seal ({@code LootSeal}), the pure {@code LootJob} and the live sink —
@@ -77,9 +77,9 @@ import net.minecraftforge.registries.ForgeRegistries;
  * is gone — breaks arrive through it on the forge side too); clears go
  * through {@code removeBlock} (the 1.12 {@code setBlockToAir} shape does
  * not port); air probes go through {@code BlockStateBase.isAir}; the
- * victim is a {@code new Pig(type, level)} (the 1.12 no-arg shape does
- * not port — the type resolves through {@code ForgeRegistries
- * .ENTITY_TYPES}, no vanilla field touched); positioning goes through
+ * victim is a {@code new MatouEntity(Example1Mod.beastType(), level)}
+ * (the T1 {@code new Pig(type, level)} shape is retired with the
+ * species — the type rides the bridge's registered beast entry); positioning goes through
  * {@code Entity.setPos} and removal through {@code Entity.discard} (the
  * 1.12 {@code setPositionAndRotation}/{@code setDead} shapes do not
  * port); carriers poll through {@code EntityGetter.getEntitiesOfClass}
@@ -93,23 +93,33 @@ import net.minecraftforge.registries.ForgeRegistries;
  * the companion at all).
  *
  * <p>Spawn proof (SPAWN=1, DEV ONLY): the bridge itself lands budgeted
- * pigs (SPAWN=1 also arms {@code MatouBridgeMod.spawnTick} -- one flag
- * drives both sides, so LOOT=1 runs stay spawn-free and their own pig
+ * beasts (SPAWN=1 also arms {@code MatouBridgeMod.spawnTick} -- one flag
+ * drives both sides, so LOOT=1 runs stay spawn-free and their own beast
  * never meets the cap veto). The companion never spawns here: it polls
- * the loaded pigs the bridge landed up to cap, records the maximum seen
+ * the loaded beasts the bridge landed up to cap, records the maximum seen
  * (past cap fails loudly -- the veto owns that bound), kills the first
- * pig past SPAWN_KILL_TICK with a simulated {@code LivingDropsEvent}
+ * beast past SPAWN_KILL_TICK with a simulated {@code LivingDropsEvent}
  * post (loot honesty standard -- the kill pays through the loot table,
  * proving the spawn-to-loot chain), then polls the diamond carrier at
- * the kill spot. The first living pig's max health is polled once
+ * the kill spot. The first living beast's max health is polled once
  * against SPAWN_HP (hp tranche -- the bridge applies the content hp per
- * landing; a diverged read-back fails loudly here too). T1 vanilla
- * scope: the census IS pigs, so a combined LOOT=1 + SPAWN=1 run counts
- * the loot victim briefly -- the proofs run one flag at a time. A
- * missing pig, a breached cap, or a missing carrier fails loudly
- * (spawn FAILED) and shuts the game down for post-mortem. Without
+ * landing; a diverged read-back fails loudly here too). Custom-entity
+ * scope: the census IS the registered beast, so a combined LOOT=1 +
+ * SPAWN=1 run counts the loot victim briefly -- the proofs run one flag
+ * at a time. A missing beast, a breached cap, or a missing carrier fails
+ * loudly (spawn FAILED) and shuts the game down for post-mortem. Without
  * SPAWN=1 nothing here runs and the proof is byte-for-byte the proven
  * union run.
+ *
+ * <p>Load order (measured on the lead bridge, hub decisions/SPAWN.md):
+ * this companion frame-references the bridge's {@code MatouEntity}
+ * ({@code new}/{@code instanceof}), so it loads after the bridge
+ * (ordering AFTER on matoubridge in autoplay-mods.toml — the 1.20.1
+ * shape of the lead's {@code required-after:matoubridge}): without it
+ * the companion can construct before the bridge jar is sourced and die
+ * on the verifier load. Load-bearing: removing it re-arms the crash.
+ * Unproven on 47.2.0 until the live tranche (kept by construction:
+ * the bridge is always present in our runs).
  */
 @Mod(AutoplayMod.MODID)
 public class AutoplayMod {
@@ -130,7 +140,7 @@ public class AutoplayMod {
     static final boolean SPAWN = "1".equals(System.getenv("SPAWN"));
     /** Mirrors the effective cap (content {@code owned.matou mob my_beast
      * cap} default, operator {@code spawn.cap} wins -- transported by the
-     * bridge spawn wire): the companion counts pigs, the effective
+     * bridge spawn wire): the companion counts beasts, the effective
      * policy owns the bound -- a drift here fails the proof loudly
      * instead of asserting a stale cap silently. Override proofs set
      * {@code SPAWN_CAP} to the packs.cfg override (both sides name the
@@ -158,11 +168,11 @@ public class AutoplayMod {
     volatile boolean lootFailed = false;
     volatile int oreDropTick = -1;
     volatile int beastDropTick = -1;
-    volatile boolean pigSeen = false;
+    volatile boolean beastSeen = false;
     volatile boolean hpSeen = false;
-    volatile int maxPigs = 0;
-    volatile int firstPigTick = -1;
-    volatile boolean pigKilled = false;
+    volatile int maxBeasts = 0;
+    volatile int firstBeastTick = -1;
+    volatile boolean beastKilled = false;
     volatile int killTick = -1;
     volatile int killX = 0;
     volatile int killY = 0;
@@ -172,7 +182,6 @@ public class AutoplayMod {
     volatile int spawnCarrierTick = -1;
     ServerLevel world = null;
     Item diamond = null;
-    EntityType<Pig> pigType = null;
     boolean foreignNoted = false;
     boolean playerNoted = false;
     boolean done = false;
@@ -246,7 +255,7 @@ public class AutoplayMod {
             if (LOOT) {
                 System.out.println("[MatouAutoplay] loot armed <ore "
                         + LOOT_ORE_X + "," + LOOT_ORE_Y + ","
-                        + LOOT_ORE_Z + ":" + LOOT_ORE_BLOCK + " + pig "
+                        + LOOT_ORE_Z + ":" + LOOT_ORE_BLOCK + " + beast "
                         + LOOT_BEAST_X + "," + LOOT_BEAST_Y + ","
                         + LOOT_BEAST_Z + "> harvestAt="
                         + LOOT_HARVEST_TICK + " (LOOT=1)");
@@ -365,54 +374,34 @@ public class AutoplayMod {
         if (lootPlayer() == null) {
             return;
         }
-        // T1 any-kill-pays (hub decisions/LOOT.md): the loot kill lands
-        // on a vanilla pig — every kill pays the single table entry
-        // (per-mob filtering stays a re-opener).
-        EntityType<Pig> type = pigType();
+        // Custom entity (hub decisions/SPAWN.md): the loot kill lands on
+        // the registered beast — every kill pays the single table entry
+        // (per-mob filtering stays a re-opener). A wandering vanilla pig
+        // would take the scripted kill dishonestly, so the species is
+        // exact here, like the bridge census.
+        EntityType<MatouEntity> type = Example1Mod.beastType();
         if (type == null) {
+            lootFail("no beast type at worldTick " + worldTicks);
             return;
         }
-        Pig pig = new Pig(type, world);
+        MatouEntity beast = new MatouEntity(type, world);
         // Owner discipline (hub decisions/LOOT.md): inherited vanilla
-        // members go through the declaring stub type, never the pig.
-        Entity body = pig;
+        // members go through the declaring stub type, never the beast.
+        Entity body = beast;
         body.setPos(LOOT_BEAST_X + 0.5, LOOT_BEAST_Y,
                 LOOT_BEAST_Z + 0.5);
-        if (!world.addFreshEntity(pig)) {
-            lootFail("pig spawn refused at worldTick " + worldTicks);
+        if (!world.addFreshEntity(beast)) {
+            lootFail("beast spawn refused at worldTick " + worldTicks);
             return;
         }
-        MinecraftForge.EVENT_BUS.post(new LivingDropsEvent(pig, null,
+        MinecraftForge.EVENT_BUS.post(new LivingDropsEvent(beast, null,
                 new ArrayList<ItemEntity>(), 0, true));
         body.discard();
         lootBeastTick = worldTicks;
         System.out.println("[MatouAutoplay] loot beast killed <"
                 + LOOT_BEAST_X + "," + LOOT_BEAST_Y + ","
-                + LOOT_BEAST_Z + ":pig> at worldTick "
+                + LOOT_BEAST_Z + ":beast> at worldTick "
                 + lootBeastTick);
-    }
-
-    /**
-     * Pig type through the Forge registry (no vanilla field touched —
-     * the Mojmap autoplay derive pins methods only, see want.txt). Loud
-     * on absence: a defaulted type spawns nothing silently otherwise.
-     */
-    @SuppressWarnings("unchecked")
-    private EntityType<Pig> pigType() {
-        if (pigType != null) {
-            return pigType;
-        }
-        ResourceLocation id = new ResourceLocation("minecraft:pig");
-        if (!ForgeRegistries.ENTITY_TYPES.containsKey(id)) {
-            lootFail("unknown <minecraft:pig> (want vanilla pig type)");
-            return null;
-        }
-        pigType = (EntityType<Pig>) ForgeRegistries.ENTITY_TYPES.getValue(id);
-        if (pigType == null) {
-            lootFail("unknown <minecraft:pig> (want vanilla pig type)");
-            return null;
-        }
-        return pigType;
     }
 
     /**
@@ -504,52 +493,53 @@ public class AutoplayMod {
     }
 
     /**
-     * Spawn proof tick: count the bridge-landed pigs (cap bound owned by
-     * the bridge veto -- past cap fails here), kill the first pig past
+     * Spawn proof tick: count the bridge-landed beasts (cap bound owned by
+     * the bridge veto -- past cap fails here), kill the first beast past
      * the kill tick through the loot seam, poll the carrier at the kill
-     * spot. The companion never spawns: every pig here was decided by
-     * the pure SpawnJob and landed by the bridge sink. T1 vanilla scope:
-     * the census IS pigs (the species narrows with custom-entity
-     * registration).
+     * spot. The companion never spawns: every beast here was decided by
+     * the pure SpawnJob and landed by the bridge sink. Custom-entity
+     * scope: the census IS the registered beast (vanilla pigs are a
+     * different species — counting one would breach a cap that is not
+     * its own).
      */
     private void spawnTick() {
         // Owner discipline (hub decisions/LOOT.md): the census poll goes
         // through the declaring EntityGetter type -- never a field read.
         EntityGetter getter = world;
-        List<Pig> found = getter.getEntitiesOfClass(Pig.class,
-                CENSUS_BOX);
-        int pigs = 0;
-        Pig first = null;
-        for (Pig pig : found) {
+        List<MatouEntity> found = getter.getEntitiesOfClass(
+                MatouEntity.class, CENSUS_BOX);
+        int beasts = 0;
+        MatouEntity first = null;
+        for (MatouEntity beast : found) {
             // Owner discipline (hub decisions/LOOT.md): inherited vanilla
-            // members go through the declaring stub type, never the pig.
-            // Dead pigs linger in the loaded set (measured on 1710: a
+            // members go through the declaring stub type, never the beast.
+            // Dead beasts linger in the loaded set (measured on 1710: a
             // corpse counted past cap at worldTick 51) -- the census
             // counts the living only, like the bridge release on the
             // kill hook.
-            Entity body = pig;
+            Entity body = beast;
             if (!body.isAlive()) {
                 continue;
             }
-            pigs++;
+            beasts++;
             if (first == null) {
-                first = pig;
+                first = beast;
             }
         }
-        if (pigs > maxPigs) {
-            maxPigs = pigs;
-            System.out.println("[MatouAutoplay] spawn census <" + pigs
+        if (beasts > maxBeasts) {
+            maxBeasts = beasts;
+            System.out.println("[MatouAutoplay] spawn census <" + beasts
                     + "> at worldTick " + worldTicks);
         }
-        if (!pigSeen && pigs > 0) {
-            pigSeen = true;
-            firstPigTick = worldTicks;
-            System.out.println("[MatouAutoplay] spawn first pig at "
-                    + "worldTick " + firstPigTick);
+        if (!beastSeen && beasts > 0) {
+            beastSeen = true;
+            firstBeastTick = worldTicks;
+            System.out.println("[MatouAutoplay] spawn first beast at "
+                    + "worldTick " + firstBeastTick);
         }
         if (!hpSeen && first != null) {
             // Owner discipline (hub decisions/LOOT.md): inherited vanilla
-            // members go through the declaring stub type, never the pig.
+            // members go through the declaring stub type, never the beast.
             LivingEntity living = first;
             float hp = living.getMaxHealth();
             if (hp != SPAWN_HP) {
@@ -561,42 +551,42 @@ public class AutoplayMod {
             System.out.println("[MatouAutoplay] spawn hp <" + hp
                     + "> at worldTick " + worldTicks);
         }
-        if (pigs > SPAWN_CAP) {
-            spawnFail("cap breached <" + pigs + " > " + SPAWN_CAP
+        if (beasts > SPAWN_CAP) {
+            spawnFail("cap breached <" + beasts + " > " + SPAWN_CAP
                     + "> at worldTick " + worldTicks);
             return;
         }
-        if (!pigKilled && pigSeen && first != null
+        if (!beastKilled && beastSeen && first != null
                 && worldTicks >= SPAWN_KILL_TICK) {
             spawnKill(first);
         }
-        if (pigKilled && !spawnCarrierDropped) {
+        if (beastKilled && !spawnCarrierDropped) {
             spawnPoll();
         }
-        if (!pigSeen && worldTicks > SPAWN_KILL_TICK + SPAWN_TIMEOUT) {
-            spawnFail("timeout (no bridge pig " + SPAWN_TIMEOUT
+        if (!beastSeen && worldTicks > SPAWN_KILL_TICK + SPAWN_TIMEOUT) {
+            spawnFail("timeout (no bridge beast " + SPAWN_TIMEOUT
                     + " ticks after kill tick " + SPAWN_KILL_TICK + ")");
-        } else if (pigKilled && !spawnCarrierDropped
+        } else if (beastKilled && !spawnCarrierDropped
                 && worldTicks > killTick + SPAWN_TIMEOUT) {
             spawnFail("timeout (no carrier " + SPAWN_TIMEOUT
                     + " ticks after kill at worldTick " + killTick + ")");
         }
     }
 
-    private void spawnKill(Pig pig) {
+    private void spawnKill(MatouEntity beast) {
         // Owner discipline (hub decisions/LOOT.md): inherited vanilla
-        // members go through the declaring stub type, never the pig.
-        Entity body = pig;
+        // members go through the declaring stub type, never the beast.
+        Entity body = beast;
         killX = (int) Math.floor(body.getX());
         killY = (int) Math.floor(body.getY());
         killZ = (int) Math.floor(body.getZ());
-        MinecraftForge.EVENT_BUS.post(new LivingDropsEvent(pig, null,
+        MinecraftForge.EVENT_BUS.post(new LivingDropsEvent(beast, null,
                 new ArrayList<ItemEntity>(), 0, true));
         body.discard();
-        pigKilled = true;
+        beastKilled = true;
         killTick = worldTicks;
-        System.out.println("[MatouAutoplay] spawn pig killed <"
-                + killX + "," + killY + "," + killZ + ":pig> at "
+        System.out.println("[MatouAutoplay] spawn beast killed <"
+                + killX + "," + killY + "," + killZ + ":beast> at "
                 + "worldTick " + killTick);
     }
 
@@ -613,7 +603,7 @@ public class AutoplayMod {
                     && near(item, killX, killY, killZ)) {
                 spawnCarrierDropped = true;
                 spawnCarrierTick = worldTicks;
-                System.out.println("[MatouAutoplay] spawn pig dropped "
+                System.out.println("[MatouAutoplay] spawn beast dropped "
                         + "<diamond> at worldTick " + spawnCarrierTick
                         + " (elapsed " + (spawnCarrierTick - killTick)
                         + ", want immediate)");
@@ -641,7 +631,7 @@ public class AutoplayMod {
         }
         if (serverTicks >= WAIT_SERVER_TICKS
                 && (!LOOT || (oreDropped && beastDropped))
-                && (!SPAWN || (pigSeen && spawnCarrierDropped))
+                && (!SPAWN || (beastSeen && spawnCarrierDropped))
                 && !done) {
             done = true;
             Minecraft.getInstance().stop();

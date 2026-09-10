@@ -15,3 +15,17 @@ mandatory=true
 versionRange="[47,)"
 ordering="NONE"
 side="CLIENT"
+# Custom entity tranche (hub decisions/SPAWN.md): the companion
+# frame-references the bridge's MatouEntity (new/instanceof), so it
+# loads AFTER the bridge jar is sourced — the 1.20.1 shape of the lead
+# bridge's required-after:matoubridge (measured there: alpha-order
+# construction + verifier eager loading + negative cache = CNFE without
+# it). Load-bearing: removing it re-arms the crash. Unproven on 47.2.0
+# until the live tranche (kept by construction: the bridge is always
+# present in our runs).
+[[dependencies.matouautoplay]]
+modId="matoubridge"
+mandatory=true
+versionRange="[0,)"
+ordering="AFTER"
+side="BOTH"

@@ -7,10 +7,21 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import net.minecraft.client.renderer.entity.PigRenderer;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.MobCategory;
+import net.minecraft.world.entity.animal.Pig;
 import net.minecraft.world.level.block.Block;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.client.event.EntityRenderersEvent;
+import net.minecraftforge.event.entity.EntityAttributeCreationEvent;
+import net.minecraftforge.eventbus.api.IEventBus;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
@@ -26,12 +37,20 @@ import net.minecraftforge.registries.RegistryObject;
  * registry events fire after every mod constructs, before any common
  * setup), so the constructor only queues validated specs and records
  * suppliers — the registry event instantiates them, and the setup
- * listener verifies each name resolves and prints the numeric-ID line
- * the verdict greps. Block-only tranche: no beast path (the
- * single-mob table stays unread, {@code MatouEntity} stays an unwired
- * shell). New refusals stay registration-local ({@code E_REG_*}, never
- * in the shared error catalog). Only this package may touch
+ * setup listener verifies each name resolves and prints the registry-key
+ * line the verdict greps. The same constructor queues the one generic
+ * beast (hub decisions/SPAWN.md, custom entity tranche) from the
+ * single-mob spawn table — pig shape and renderer reused, vanilla pigs
+ * never carry our census anymore. Block-only ports came first (no beast
+ * path); this tranche narrows the species, {@code MatouEntity} is
+ * wired. New refusals stay registration-local ({@code E_REG_*}, never
+ * in the shared catalog). Only this package may touch
  * {@code net.minecraft} / {@code net.minecraftforge}.
+ *
+ * <p>Ordering note: {@link MatouBridgeMod} binds its wires in its own
+ * common-setup listener (deferred-registry fill lands one loading state
+ * earlier), so custom wires resolve there whatever the mod order.
+ * Registration never silently lags a bind.
  */
 @Mod(Example1Mod.MODID)
 public final class Example1Mod {
@@ -44,6 +63,28 @@ public final class Example1Mod {
             new ArrayList<PendingBlock>();
     private static final Map<String, RegistryObject<Block>> REGISTERED =
             new HashMap<String, RegistryObject<Block>>();
+    /**
+     * Entity tranche: the one generic beast, queued on the entity
+     * registry under this mod's own id (same {@code (modid, short name)}
+     * rule as blocks — short in, {@code example1:my_beast} out). Null
+     * until a pack wires an owned file (Q1 cohabitation — no owned file
+     * anywhere means no beast, same passivity as the spawn wire).
+     */
+    private static final DeferredRegister<EntityType<?>> ENTITIES =
+            DeferredRegister.create(ForgeRegistries.ENTITY_TYPES, MODID);
+    private static RegistryObject<EntityType<MatouEntity>> BEAST;
+    private static String registeredEntity;
+
+    /**
+     * The registered beast type for the bridge sink and the DEV
+     * companion (same species rule on both sides — a wandering vanilla
+     * pig must never take a scripted landing or kill). Null before the
+     * registry fill or without a wired owned file; callers fail loudly
+     * on null, never a vanilla default.
+     */
+    public static EntityType<MatouEntity> beastType() {
+        return BEAST == null ? null : BEAST.get();
+    }
 
     /**
      * Queue + record: every packs.cfg wire naming a non-vanilla block
@@ -57,10 +98,13 @@ public final class Example1Mod {
      * loading state earlier, whatever the mod order).
      */
     public Example1Mod() {
-        BLOCKS.register(
-                FMLJavaModLoadingContext.get().getModEventBus());
-        FMLJavaModLoadingContext.get().getModEventBus().addListener(
-                this::setup);
+        IEventBus bus =
+                FMLJavaModLoadingContext.get().getModEventBus();
+        BLOCKS.register(bus);
+        ENTITIES.register(bus);
+        bus.addListener(this::setup);
+        bus.addListener((EntityAttributeCreationEvent event) ->
+                registerBeastAttributes(event));
         File cfg = new File(PACKS_PATH);
         if (!cfg.isFile()) {
             return;
@@ -76,6 +120,7 @@ public final class Example1Mod {
         for (Packs.PackSpec spec : specs) {
             queueCustom(spec);
         }
+        registerBeast(specs);
         for (PendingBlock p : PENDING) {
             try {
                 REGISTERED.put(p.name, BLOCKS.register(p.shortName,
@@ -107,6 +152,65 @@ public final class Example1Mod {
             }
             System.out.println("[MatouBridge] registered <" + e.getKey()
                     + "> id " + e.getValue().getId());
+        }
+        if (registeredEntity != null) {
+            EntityType<?> resolved = ForgeRegistries.ENTITY_TYPES.getValue(
+                    new ResourceLocation(registeredEntity));
+            if (resolved == null || resolved != BEAST.get()) {
+                throw new IllegalStateException(
+                        "E_REG_BEAST:unregistered <"
+                                + registeredEntity + ">");
+            }
+            System.out.println("[MatouBridge] registered-entity <"
+                    + registeredEntity + ">");
+        }
+    }
+
+    /**
+     * Beast attribute map: fresh entity types carry none, and the
+     * vanilla {@code LivingEntity} ctor NPEs without one (measured live
+     * on 1165 on the first landing — the tripwire never fires, the tick
+     * loop dies). The beast reuses the vanilla pig map wholesale
+     * (pig-identical, never hand-copied values). Null beast (no wired
+     * owned file) stays passive — there is no type to arm, same Q1
+     * rule as the missing packs.cfg.
+     */
+    private static void registerBeastAttributes(
+            EntityAttributeCreationEvent event) {
+        if (BEAST == null) {
+            return;
+        }
+        event.put(BEAST.get(), Pig.createAttributes().build());
+    }
+
+    /**
+     * Client-only renderer mapping: the generic beast reuses the vanilla
+     * pig renderer until the custom-renderer tranche. A dist-filtered
+     * nested subscriber (never referenced by server-side code, so the
+     * class never loads on a dedicated server — no client frame ever
+     * verifies there), discovered by Forge through ASM scan data. A
+     * missing mapping would die loudly on the client instead (no
+     * renderer at the first tracked spawn).
+     *
+     * <p>1.20.1 shape (measured on the pinned 47.2.0 bytes, never the
+     * 1.16.5 shape): renderers map through the mod-bus
+     * {@code EntityRenderersEvent.RegisterRenderers} event (the 1.16.5
+     * {@code RenderingRegistry} call does not exist here) with the
+     * single-{@code (Context)} pig ctor. Client link unproven until the
+     * live tranche (the server Reobf leaves client refs alone; what the
+     * client runtime wants them named is measured at live time, never
+     * assumed here).
+     */
+    @Mod.EventBusSubscriber(modid = Example1Mod.MODID,
+            bus = Mod.EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
+    public static final class BeastClient {
+        @SubscribeEvent
+        public static void registerBeastRenderer(
+                EntityRenderersEvent.RegisterRenderers event) {
+            // T infers to Pig (the provider is a Pig renderer, the type
+            // is a Pig subtype) — the beast renders as a vanilla pig
+            // until the custom-renderer tranche.
+            event.registerEntityRenderer(BEAST.get(), PigRenderer::new);
         }
     }
 
@@ -172,6 +276,66 @@ public final class Example1Mod {
         return false;
     }
 
+    /**
+     * Entity registration: the single mob ref from the same owned content
+     * the loot table and the spawn wire came from (parsed once, like
+     * blocks — never on the tick path). No owned file anywhere means no
+     * beast (Q1 cohabitation), same passivity as the spawn wire. Several
+     * distinct owned files refuse loudly — silent table picks are
+     * defaults, and per-mob tables are a documented re-opener.
+     *
+     * <p>1.20.1 shape (DeferredRegister, never the 1.7.10/1.12
+     * {@code EntityRegistry} call): the beast type builds through
+     * {@code EntityType.Builder} (pig-category, pig hitbox and pig
+     * tracking — constants measured on the pinned 47.2.0 bytes, never
+     * recalled: vanilla PIG chains {@code MobCategory.CREATURE} /
+     * {@code 0.9 x 0.9} / tracking range 10 with the Builder default
+     * update interval, so no interval call here is pig-identical, not a
+     * missing knob) and queues under the short mob name (the register
+     * builds the entry id as {@code (modid, name)} from this
+     * DeferredRegister's own modid, same rule as blocks — short in,
+     * {@code example1:my_beast} out). The setup-time tripwire reads it
+     * back through {@code ForgeRegistries.ENTITY_TYPES}.
+     */
+    private static void registerBeast(List<Packs.PackSpec> specs) {
+        Set<String> owned = new HashSet<String>();
+        for (Packs.PackSpec spec : specs) {
+            String path = spec.args.get("ownedFile");
+            if (path != null) {
+                owned.add(path);
+            }
+        }
+        if (owned.isEmpty()) {
+            return;
+        }
+        if (owned.size() > 1) {
+            throw new IllegalArgumentException("E_REG_TABLE:multi <"
+                    + owned + "> (one beast table per bridge)");
+        }
+        String ownedFile = owned.iterator().next();
+        String mob = loadMobRef(ownedFile);
+        int colon = mob.indexOf(':');
+        String shortName = mob.substring(colon + 1);
+        // Registry id, never the SPI mob ref: this DeferredRegister
+        // builds entry ids as (own modid, name), so the tripwire must
+        // look up <example1:my_beast>, not <example1.content:my_beast>
+        // (the 1.7.10 tripwire is class-keyed and never reads the
+        // string — copying mob verbatim only works there; measured live
+        // on 1165, never assumed here).
+        registeredEntity = MODID + ":" + shortName;
+        try {
+            BEAST = ENTITIES.register(shortName,
+                    () -> EntityType.Builder.of(MatouEntity::new,
+                            MobCategory.CREATURE)
+                            .sized(0.9F, 0.9F)
+                            .clientTrackingRange(10)
+                            .build(shortName));
+        } catch (Exception e) {
+            throw new IllegalArgumentException("E_REG_BEAST:refused <"
+                    + mob + "> (" + e.getMessage() + ")", e);
+        }
+    }
+
     private static final class PendingBlock {
         final String name;
         final String shortName;
@@ -181,6 +345,53 @@ public final class Example1Mod {
             this.name = name;
             this.shortName = shortName;
             this.hardness = hardness;
+        }
+    }
+
+    /**
+     * Content mob ref, reached reflectively: the bridge stays content-blind
+     * at build time (Q2 — same rule as {@code loadSpecs}). The
+     * single-mob rule lives in {@code SpawnTable.fromFile} — zero or
+     * several mobs already refuse there, never a quiet pick here. Every
+     * failure is coded E_REG_*, never a silent default.
+     */
+    private static String loadMobRef(String ownedFile) {
+        final Class<?> cls;
+        try {
+            cls = Class.forName("fr.iamacat.example1.SpawnTable");
+        } catch (ClassNotFoundException e) {
+            throw new IllegalArgumentException("E_REG_BEAST:missing "
+                    + "example1 for <" + ownedFile + "> ("
+                    + e.getMessage() + ")", e);
+        }
+        final Method fromFile;
+        try {
+            fromFile = cls.getMethod("fromFile", String.class);
+        } catch (NoSuchMethodException e) {
+            throw new IllegalArgumentException("E_REG_BEAST:shape "
+                    + "<fr.iamacat.example1.SpawnTable> ("
+                    + e.getMessage() + ")", e);
+        }
+        try {
+            Object table = fromFile.invoke(null, ownedFile);
+            Object mob = table.getClass().getMethod("mob").invoke(table);
+            if (!(mob instanceof String) || ((String) mob).isEmpty()
+                    || ((String) mob).indexOf(':') < 0) {
+                throw new IllegalStateException("E_REG_BEAST:shape "
+                        + "<fromFile> (want qualified mob ref)");
+            }
+            return (String) mob;
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            throw new IllegalArgumentException("E_REG_BEAST:unreadable <"
+                    + ownedFile + "> (" + cause.getMessage() + ")", e);
+        } catch (IllegalAccessException e) {
+            throw new IllegalArgumentException("E_REG_BEAST:shape <"
+                    + ownedFile + "> (" + e.getMessage() + ")", e);
+        } catch (NoSuchMethodException e) {
+            throw new IllegalArgumentException("E_REG_BEAST:shape "
+                    + "<fr.iamacat.example1.SpawnTable> ("
+                    + e.getMessage() + ")", e);
         }
     }
 

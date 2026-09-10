@@ -189,7 +189,16 @@ echo "ok d3-live : server provisioned (pins verified)"
 #    Entity/getId/isAlive/moveTo, LivingEntity/getAttribute/setHealth/
 #    getMaxHealth, AttributeInstance/setBaseValue,
 #    EntityGetter/getEntitiesOfClass, EntityType/PIG,
-#    Attributes/MAX_HEALTH).
+#    Attributes/MAX_HEALTH, plus the custom entity tranche (hub
+#    decisions/SPAWN.md): EntityType$Builder/of/sized/clientTrackingRange/
+#    build, Pig/createAttributes, AttributeSupplier$Builder/build.
+#    MobCategory/CREATURE needs no row (joined.tsrg v2 maps obf b
+#    straight to CREATURE — runtime name identical, passthrough by
+#    construction like Forge classes); client refs (PigRenderer) and
+#    Forge refs (ENTITY_TYPES, EntityAttributeCreationEvent,
+#    EntityRenderersEvent) pass the server Reobf untouched (unmapped refs
+#    pass through — same split as the 1165 custom entity tranche, client
+#    link measured at live time).
 #    Production classes stay Mojmap (installer MERGE_MAPPING keeps classes
 #    official) — only members reobfuscate, so no class lines are needed.
 python3 - "$D3_DIR/mcp_config-1.20.1-20230612.114412.zip" "$D3_DIR/server-mappings.txt" "$MC_INNER" "$J17/javap" "$D3_DIR/srg-narrow.srg" <<'EOF'
@@ -330,6 +339,18 @@ WANT_METHODS = [
      "(D)V", False),
     ("net/minecraft/world/level/EntityGetter", "getEntitiesOfClass",
      "(Ljava/lang/Class;Lnet/minecraft/world/phys/AABB;)Ljava/util/List;", False),
+    ("net/minecraft/world/entity/EntityType$Builder", "of",
+     "(Lnet/minecraft/world/entity/EntityType$EntityFactory;Lnet/minecraft/world/entity/MobCategory;)Lnet/minecraft/world/entity/EntityType$Builder;", True),
+    ("net/minecraft/world/entity/EntityType$Builder", "sized",
+     "(FF)Lnet/minecraft/world/entity/EntityType$Builder;", False),
+    ("net/minecraft/world/entity/EntityType$Builder", "clientTrackingRange",
+     "(I)Lnet/minecraft/world/entity/EntityType$Builder;", False),
+    ("net/minecraft/world/entity/EntityType$Builder", "build",
+     "(Ljava/lang/String;)Lnet/minecraft/world/entity/EntityType;", False),
+    ("net/minecraft/world/entity/animal/Pig", "createAttributes",
+     "()Lnet/minecraft/world/entity/ai/attributes/AttributeSupplier$Builder;", True),
+    ("net/minecraft/world/entity/ai/attributes/AttributeSupplier$Builder", "build",
+     "()Lnet/minecraft/world/entity/ai/attributes/AttributeSupplier;", False),
 ]
 WANT_FIELDS = [
     ("net/minecraft/world/level/Level", "OVERWORLD",
@@ -409,7 +430,7 @@ for owner, mcp, ftype, want_static in WANT_FIELDS:
     assert flags.get((obf_name, "F:" + ftype_obf)) == want_static, \
         "E_SRG_DERIVE:javap mismatch field <%s %s>" % (obf_owner, obf_name)
     lines.append("FD: %s/%s %s/%s" % (obf2srg[obf_owner], tm[0]["srg"], owner, mcp))
-assert len(lines) == 27, "E_SRG_DERIVE:want 27 lines, got %d" % len(lines)
+assert len(lines) == 33, "E_SRG_DERIVE:want 33 lines, got %d" % len(lines)
 open(outpath, "w").write("\n".join(lines) + "\n")
 print("ok d3-live : narrow SRG derived (%d lines)" % len(lines))
 EOF
@@ -449,11 +470,17 @@ pin_method "net/minecraft/world/entity/LivingEntity/setHealth" "(F)V"
 pin_method "net/minecraft/world/entity/LivingEntity/getMaxHealth" "()F"
 pin_method "net/minecraft/world/entity/ai/attributes/AttributeInstance/setBaseValue" "(D)V"
 pin_method "net/minecraft/world/level/EntityGetter/getEntitiesOfClass" "(Ljava/lang/Class;Lnet/minecraft/world/phys/AABB;)Ljava/util/List;"
+pin_method "net/minecraft/world/entity/EntityType\$Builder/of" "(Lnet/minecraft/world/entity/EntityType\$EntityFactory;Lnet/minecraft/world/entity/MobCategory;)Lnet/minecraft/world/entity/EntityType\$Builder;"
+pin_method "net/minecraft/world/entity/EntityType\$Builder/sized" "(FF)Lnet/minecraft/world/entity/EntityType\$Builder;"
+pin_method "net/minecraft/world/entity/EntityType\$Builder/clientTrackingRange" "(I)Lnet/minecraft/world/entity/EntityType\$Builder;"
+pin_method "net/minecraft/world/entity/EntityType\$Builder/build" "(Ljava/lang/String;)Lnet/minecraft/world/entity/EntityType;"
+pin_method "net/minecraft/world/entity/animal/Pig/createAttributes" "()Lnet/minecraft/world/entity/ai/attributes/AttributeSupplier\$Builder;"
+pin_method "net/minecraft/world/entity/ai/attributes/AttributeSupplier\$Builder/build" "()Lnet/minecraft/world/entity/ai/attributes/AttributeSupplier;"
 pin_field "net/minecraft/world/item/Items/DIAMOND"
 pin_field "net/minecraft/world/entity/EntityType/PIG"
 pin_field "net/minecraft/world/entity/ai/attributes/Attributes/MAX_HEALTH"
-[ "$(grep -c . "$SRG_NARROW")" = "27" ] \
-  || { echo "FAIL d3-live : narrow map drift (want 27 lines)"; exit 1; }
+[ "$(grep -c . "$SRG_NARROW")" = "33" ] \
+  || { echo "FAIL d3-live : narrow map drift (want 33 lines)"; exit 1; }
 echo "ok d3-live : stubs pinned to derived SRG"
 
 # 2c. Pin every stubbed member against the provisioned jars. Forge classes
@@ -490,6 +517,19 @@ pin_uni 'net.minecraftforge.event.entity.living.LivingDropsEvent' 'LivingDropsEv
 pin_uni 'net.minecraftforge.event.entity.EntityJoinLevelEvent' 'EntityJoinLevelEvent('
 pin_uni 'net.minecraftforge.event.entity.EntityJoinLevelEvent' 'getLevel('
 pin_uni 'net.minecraftforge.event.entity.EntityEvent' 'getEntity('
+# Custom entity tranche (hub decisions/SPAWN.md): the generic beast
+# queues through DeferredRegister on ForgeRegistries.ENTITY_TYPES (same
+# create/register calls the block tranche already pins), the setup-time
+# tripwire reads it back, the attribute map lands on the mod-bus
+# EntityAttributeCreationEvent, and the client-only renderer rides the
+# mod-bus RegisterRenderers event (the single (Context) pig ctor,
+# measured from the pinned SRG client jar) through a dist-filtered
+# nested subscriber. Forge names are runtime-final: presence is the
+# pin. The Mod/EventBusSubscriber shape rides javafmllanguage (same
+# split as Mod/FMLJavaModLoadingContext below).
+pin_uni 'net.minecraftforge.registries.ForgeRegistries' 'ENTITY_TYPES'
+pin_uni 'net.minecraftforge.event.entity.EntityAttributeCreationEvent' 'put('
+pin_uni 'net.minecraftforge.client.event.EntityRenderersEvent$RegisterRenderers' 'registerEntityRenderer('
 pin_game() {
   "$J17/javap" -p -cp "$SRG_GAME" "$1" 2>/dev/null | grep -q "$2" \
     || { echo "FAIL d3-live : game pin unmet <$1 :: $2>"; exit 1; }
@@ -498,12 +538,16 @@ pin_game 'net.minecraft.world.level.Level' 'm_7731_('
 pin_game 'net.minecraft.world.level.Level' 'm_46472_('
 pin_game 'net.minecraft.world.level.Level' 'f_46428_'
 pin_game 'net.minecraft.world.level.block.Block' 'm_49966_('
+pin_game 'net.minecraft.world.entity.MobCategory' 'CREATURE'
 pin_lib() {
   "$J17/javap" -p -cp "$2" "$1" 2>/dev/null | grep -q "$3" \
     || { echo "FAIL d3-live : library pin unmet <$1 :: $3>"; exit 1; }
 }
 pin_lib 'net.minecraftforge.fml.LogicalSide' "$FMLCORE" 'SERVER'
 pin_lib 'net.minecraftforge.fml.common.Mod' "$JMLLANG" 'value()'
+pin_lib 'net.minecraftforge.fml.common.Mod$EventBusSubscriber' "$JMLLANG" 'modid()'
+pin_lib 'net.minecraftforge.fml.common.Mod$EventBusSubscriber' "$JMLLANG" 'bus()'
+pin_lib 'net.minecraftforge.fml.common.Mod$EventBusSubscriber$Bus' "$JMLLANG" 'MOD'
 pin_lib 'net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext' "$JMLLANG" 'get()'
 pin_lib 'net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext' "$JMLLANG" 'getModEventBus('
 pin_lib 'net.minecraftforge.eventbus.api.SubscribeEvent' "$EVENTBUS" 'SubscribeEvent'

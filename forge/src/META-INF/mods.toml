@@ -22,7 +22,7 @@ side="BOTH"
 modId="example1"
 version="@VERSION@"
 displayName="MatouExample1"
-description="Example1 content holder: registers example1 blocks."
+description="Example1 content holder: registers example1 blocks + generic beast."
 [[dependencies.example1]]
 modId="forge"
 mandatory=true

@@ -7,6 +7,26 @@ Full notes per tag: https://github.com/matou-dev/bridge-1201/releases.
 
 ## [Unreleased]
 
+- Custom entity E0 (hub `decisions/SPAWN.md`): `MatouEntity` shell
+  replaced by the generic beast (`extends Pig`, pig shape/AI/sounds
+  reused), `Example1Mod` queues it on a `DeferredRegister` over
+  `ForgeRegistries.ENTITY_TYPES` (short mob name from the single-mob
+  spawn table, pig-category/hitbox/tracking measured on the pinned
+  47.2.0 bytes — the 1.7.10/1.12 `EntityRegistry` call does not exist
+  here) with a setup-time `ENTITY_TYPES.getValue` tripwire on the
+  registry id (never the SPI mob ref — 1165-measured) plus a
+  `registered-entity` log line, the attribute map on the mod-bus
+  `EntityAttributeCreationEvent` (vanilla pig map reused wholesale —
+  1165-measured NPE without one), and the client-only vanilla
+  `PigRenderer` mapping through the mod-bus `RegisterRenderers` event
+  (single `(Context)` ctor, measured from the pinned SRG client jar —
+  the 1.16.5 `RenderingRegistry` path does not exist here) in a
+  dist-filtered nested subscriber (never loaded on servers);
+  census/veto/reconcile/kill-hook/landing and the companion legs
+  narrowed to the beast; companion loads AFTER `matoubridge` in
+  autoplay-mods.toml (lead-measured, unproven on 47.2.0 until live).
+  Live proof TODO.
+
 ## [1.2.0] - 2026-09-09
 
 Versioned server drop: https://github.com/matou-dev/bridge-1201/releases/tag/v1.2.0
