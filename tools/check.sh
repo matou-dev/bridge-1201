@@ -83,7 +83,9 @@ java -cp build/sib fr.iamacat.bridge.spike.RepopCheck
 # Etage 2 : forge/ seul touche MC/Forge (1.20.1). Stub shape-only, pas de
 # MC_JAR requis : vert partout, le live D3 prouve contre le vrai jar
 # (etage 3, LIVE=1).
-mkdir -p forge/build
+# Clean before compile: javac never deletes stale classes, so a renamed or
+# deleted source would linger in forge/build and lie to surface scans.
+rm -rf forge/build && mkdir -p forge/build
 javac --release 8 -cp build/sib -d forge/build $(find forge/src tools/live/stub -name '*.java')
 echo "ok (forge-stub)"
 # Etage 3 (D3) : live opt-in. Default skip keeps CI green without
