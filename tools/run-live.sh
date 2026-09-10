@@ -174,6 +174,28 @@ if [ ! -f "$D3_DIR/server-mappings.txt" ]; then
 fi
 echo "$MOJMAPS_SHA1  $D3_DIR/server-mappings.txt" | sha1sum -c - >/dev/null 2>&1 \
   || { echo "FAIL d3-live : Mojang mappings sha1 drift (want $MOJMAPS_SHA1)"; exit 1; }
+# Client mappings (one row needs them — see step 2): Mojang official
+# moj<->obf map for CLIENT classes, pinned by tools/autoplay/
+# client-mappings-pin.txt (same repo, referenced here — never copied, hub
+# doctrine). Cached beside server.txt, D3_OFFLINE-safe.
+CLIMAP_PIN="tools/autoplay/client-mappings-pin.txt"
+CLIMAP_URL="$(sed -n 's/^URL=//p' "$CLIMAP_PIN")"
+CLIMAP_SHA1="$(sed -n 's/^SHA1=//p' "$CLIMAP_PIN")"
+CLIMAP_SIZE="$(sed -n 's/^SIZE=//p' "$CLIMAP_PIN")"
+[ -n "$CLIMAP_URL" ] && [ -n "$CLIMAP_SHA1" ] && [ -n "$CLIMAP_SIZE" ] \
+  || { echo "FAIL d3-live : malformed <$CLIMAP_PIN> (want URL= + SHA1= + SIZE=)"; exit 1; }
+if [ ! -f "$D3_DIR/client-mappings.txt" ]; then
+  if [ "${D3_OFFLINE:-}" = "1" ]; then
+    echo "FAIL d3-live : offline and client mappings absent ($D3_DIR/client-mappings.txt)"
+    exit 1;
+  fi
+  curl -sL -o "$D3_DIR/client-mappings.txt" "$CLIMAP_URL" \
+    || { echo "FAIL d3-live : client mappings download"; exit 1; }
+fi
+echo "$CLIMAP_SHA1  $D3_DIR/client-mappings.txt" | sha1sum -c - >/dev/null 2>&1 \
+  || { echo "FAIL d3-live : client mappings sha1 drift (want $CLIMAP_SHA1)"; exit 1; }
+[ "$(wc -c < "$D3_DIR/client-mappings.txt")" = "$CLIMAP_SIZE" ] \
+  || { echo "FAIL d3-live : client mappings size drift (want $CLIMAP_SIZE)"; exit 1; }
 echo "ok d3-live : server provisioned (pins verified)"
 
 # 2. Derive the narrow Mojmap->SRG map from pinned bytes: server.txt gives
@@ -191,19 +213,32 @@ echo "ok d3-live : server provisioned (pins verified)"
 #    EntityGetter/getEntitiesOfClass, EntityType/PIG,
 #    Attributes/MAX_HEALTH, plus the custom entity tranche (hub
 #    decisions/SPAWN.md): EntityType$Builder/of/sized/clientTrackingRange/
-#    build, Pig/createAttributes, AttributeSupplier$Builder/build.
+#    build, Pig/createAttributes, AttributeSupplier$Builder/build, and the
+#    two vanilla SAMs our lambdas/method-refs target
+#    (EntityType$EntityFactory/create,
+#    EntityRendererProvider/create — see the Reobf note in
+#    tools/live/Reobf.java: an invokedynamic names its SAM in the
+#    compiled namespace, so the shipped bytes must carry the SRG name or
+#    LambdaMetafactory spins a class the runtime interface does not
+#    declare — AbstractMethodError, measured live on 47.2.0, never
+#    silent. The 1165/1122 SAMs need no row: their runtime names are
+#    stable by construction there).
 #    MobCategory/CREATURE needs no row (joined.tsrg v2 maps obf b
 #    straight to CREATURE — runtime name identical, passthrough by
-#    construction like Forge classes); client refs (PigRenderer) and
-#    Forge refs (ENTITY_TYPES, EntityAttributeCreationEvent,
+#    construction like Forge classes); other client refs (PigRenderer)
+#    and Forge refs (ENTITY_TYPES, EntityAttributeCreationEvent,
 #    EntityRenderersEvent) pass the server Reobf untouched (unmapped refs
 #    pass through — same split as the 1165 custom entity tranche, client
 #    link measured at live time).
+#    The provider SAM derives from client.txt (client classes never ship
+#    in server.txt or the server jars — same split as the autoplay
+#    derive, which owns the client javap leg; here the exact-one asserts
+#    on both hops plus the live client run lock it, never a bare recall).
 #    Production classes stay Mojmap (installer MERGE_MAPPING keeps classes
 #    official) — only members reobfuscate, so no class lines are needed.
-python3 - "$D3_DIR/mcp_config-1.20.1-20230612.114412.zip" "$D3_DIR/server-mappings.txt" "$MC_INNER" "$J17/javap" "$D3_DIR/srg-narrow.srg" <<'EOF'
+python3 - "$D3_DIR/mcp_config-1.20.1-20230612.114412.zip" "$D3_DIR/server-mappings.txt" "$MC_INNER" "$J17/javap" "$D3_DIR/srg-narrow.srg" "$D3_DIR/client-mappings.txt" <<'EOF'
 import re, subprocess, sys, zipfile
-mcpcfg, mojmaps, server, javap, outpath = sys.argv[1:6]
+mcpcfg, mojmaps, server, javap, outpath, climaps = sys.argv[1:7]
 tsrg = zipfile.ZipFile(mcpcfg).read("config/joined.tsrg").decode("utf-8")
 # moj class (dots) -> obf class; moj class -> [(kind, rettype, name, args, obf)]
 moj2obf, members = {}, {}
@@ -225,6 +260,29 @@ for raw in open(mojmaps):
         cur = m.group(1)
         moj2obf[cur] = m.group(2)
         members.setdefault(cur, [])
+# Client map (same ProGuard shape): client-only classes live here alone
+# (server.txt never names them). Separate tables — client.txt also
+# covers shared classes, and merging would double members the
+# exactly-one asserts must see once.
+cmoj2obf, cmembers = {}, {}
+cur = None
+for raw in open(climaps):
+    if not raw.strip() or raw.startswith("#"):
+        continue
+    if raw[0] in (" ", "\t"):
+        m = re.match(r"^\s+(?:\d+:\d+:)?(\S+) ([\w$<>]+)(\(.*\))? -> ([\w$<>]+)$", raw.rstrip())
+        assert m, "E_SRG_DERIVE:unparsed client mappings line <%s>" % raw.rstrip()
+        rettype, name, args, obf = m.groups()
+        kind = "method" if args is not None else "field"
+        cmembers.setdefault(cur, []).append((kind, rettype, name, args or "", obf))
+    else:
+        if "package-info -> " in raw:
+            continue  # ProGuard package marker, never a WANT owner
+        m = re.match(r"^([\w.$]+) -> ([\w$.]+):$", raw.rstrip())
+        assert m, "E_SRG_DERIVE:unparsed client mappings class <%s>" % raw.rstrip()
+        cur = m.group(1)
+        cmoj2obf[cur] = m.group(2)
+        cmembers.setdefault(cur, [])
 
 def to_internal(moj_dots):
     return moj_dots.replace(".", "/")
@@ -232,6 +290,18 @@ def to_internal(moj_dots):
 def obf_desc(moj_desc):
     return re.sub(r"L([^;]+);",
                   lambda m: "L" + to_internal(moj2obf.get(m.group(1).replace("/", "."), m.group(1))) + ";",
+                  moj_desc)
+
+def cobf_desc(moj_desc):
+    # Client-row resolver: client.txt first (client-only classes live
+    # there alone), server.txt fallback (shared classes map identically
+    # in both Mojang files — same obf namespace, never two answers).
+    def obf(moj_slashes):
+        moj_dots = moj_slashes.replace("/", ".")
+        if moj_dots in cmoj2obf:
+            return to_internal(cmoj2obf[moj_dots])
+        return to_internal(moj2obf.get(moj_dots, moj_slashes))
+    return re.sub(r"L([^;]+);", lambda m: "L" + obf(m.group(1)) + ";",
                   moj_desc)
 
 def srg_desc(obf_d, obf2srg):
@@ -351,6 +421,19 @@ WANT_METHODS = [
      "()Lnet/minecraft/world/entity/ai/attributes/AttributeSupplier$Builder;", True),
     ("net/minecraft/world/entity/ai/attributes/AttributeSupplier$Builder", "build",
      "()Lnet/minecraft/world/entity/ai/attributes/AttributeSupplier;", False),
+    ("net/minecraft/world/entity/EntityType$EntityFactory", "create",
+     "(Lnet/minecraft/world/entity/EntityType;Lnet/minecraft/world/level/Level;)Lnet/minecraft/world/entity/Entity;", False),
+]
+# Vanilla SAMs our lambdas/method-refs target (see the Reobf note):
+# same triple-lock shape as WANT_METHODS, except the javap leg — client
+# classes never ship in the provisioned server jars, so no javap can
+# disambiguate them here (the client pipeline owns that leg through the
+# autoplay derive). The exact-one asserts on the moj hop (client.txt)
+# and the obf hop (joined.tsrg) plus the live client run lock the row —
+# a renamed member breaks both asserts loudly, never silently.
+WANT_SAM_CLIENT = [
+    ("net/minecraft/client/renderer/entity/EntityRendererProvider", "create",
+     "(Lnet/minecraft/client/renderer/entity/EntityRendererProvider$Context;)Lnet/minecraft/client/renderer/entity/EntityRenderer;", False),
 ]
 WANT_FIELDS = [
     ("net/minecraft/world/level/Level", "OVERWORLD",
@@ -430,7 +513,26 @@ for owner, mcp, ftype, want_static in WANT_FIELDS:
     assert flags.get((obf_name, "F:" + ftype_obf)) == want_static, \
         "E_SRG_DERIVE:javap mismatch field <%s %s>" % (obf_owner, obf_name)
     lines.append("FD: %s/%s %s/%s" % (obf2srg[obf_owner], tm[0]["srg"], owner, mcp))
-assert len(lines) == 33, "E_SRG_DERIVE:want 33 lines, got %d" % len(lines)
+for owner, mcp, desc, want_static in WANT_SAM_CLIENT:
+    moj_cls = owner.replace("/", ".")
+    assert moj_cls in cmoj2obf, "E_SRG_DERIVE:no client class <%s>" % owner
+    obf_owner = cmoj2obf[moj_cls]
+    want_args = desc_args(desc)
+    cands = [(k, r, n, a, o) for (k, r, n, a, o) in cmembers[moj_cls]
+             if k == "method" and n == mcp and norm_args(a) == want_args]
+    assert len(cands) == 1, "E_SRG_DERIVE:client mojmap member <%s %s%s> %s" % (owner, mcp, desc, cands)
+    obf_name = cands[0][4]
+    od = cobf_desc(desc)
+    tm = [m for m in classes[obf_owner]
+          if m["desc"] == od and m["obf"] == obf_name]
+    assert len(tm) == 1, "E_SRG_DERIVE:no tsrg member <%s %s %s>" % (obf_owner, obf_name, od)
+    # No javap leg here (client classes never ship in the provisioned
+    # server jars — see the WANT_SAM_CLIENT note): the two exact-one
+    # asserts above plus the live client run own this row. want_static
+    # is documentary (an interface SAM is never static) and unchecked.
+    sd = srg_desc(od, obf2srg)
+    lines.append("MD: %s/%s %s %s/%s %s" % (obf2srg[obf_owner], tm[0]["srg"], sd, owner, mcp, desc))
+assert len(lines) == 35, "E_SRG_DERIVE:want 35 lines, got %d" % len(lines)
 open(outpath, "w").write("\n".join(lines) + "\n")
 print("ok d3-live : narrow SRG derived (%d lines)" % len(lines))
 EOF
@@ -476,11 +578,13 @@ pin_method "net/minecraft/world/entity/EntityType\$Builder/clientTrackingRange" 
 pin_method "net/minecraft/world/entity/EntityType\$Builder/build" "(Ljava/lang/String;)Lnet/minecraft/world/entity/EntityType;"
 pin_method "net/minecraft/world/entity/animal/Pig/createAttributes" "()Lnet/minecraft/world/entity/ai/attributes/AttributeSupplier\$Builder;"
 pin_method "net/minecraft/world/entity/ai/attributes/AttributeSupplier\$Builder/build" "()Lnet/minecraft/world/entity/ai/attributes/AttributeSupplier;"
+pin_method "net/minecraft/world/entity/EntityType\$EntityFactory/create" "(Lnet/minecraft/world/entity/EntityType;Lnet/minecraft/world/level/Level;)Lnet/minecraft/world/entity/Entity;"
+pin_method "net/minecraft/client/renderer/entity/EntityRendererProvider/create" "(Lnet/minecraft/client/renderer/entity/EntityRendererProvider\$Context;)Lnet/minecraft/client/renderer/entity/EntityRenderer;"
 pin_field "net/minecraft/world/item/Items/DIAMOND"
 pin_field "net/minecraft/world/entity/EntityType/PIG"
 pin_field "net/minecraft/world/entity/ai/attributes/Attributes/MAX_HEALTH"
-[ "$(grep -c . "$SRG_NARROW")" = "33" ] \
-  || { echo "FAIL d3-live : narrow map drift (want 33 lines)"; exit 1; }
+[ "$(grep -c . "$SRG_NARROW")" = "35" ] \
+  || { echo "FAIL d3-live : narrow map drift (want 35 lines)"; exit 1; }
 echo "ok d3-live : stubs pinned to derived SRG"
 
 # 2c. Pin every stubbed member against the provisioned jars. Forge classes

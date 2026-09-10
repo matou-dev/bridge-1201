@@ -7,6 +7,20 @@ Full notes per tag: https://github.com/matou-dev/bridge-1201/releases.
 
 ## [Unreleased]
 
+- Custom entity live fix (hub `decisions/SPAWN.md`, caught loud on the
+  first direct-client run, never silent): an `invokedynamic` names its
+  SAM in the compiled namespace, but both vanilla SAMs the beast
+  touches are SRG-renamed at runtime (`EntityRendererProvider.create`
+  → `m_174009_`, `EntityType$EntityFactory.create` → `m_20721_`) —
+  LambdaMetafactory spun a class the runtime interface does not declare
+  (`AbstractMethodError` at the renderer registration; the factory
+  would have died the same way at the first landing). Fixed in
+  `tools/live/Reobf.java` (indy-name rewrite off the same narrow-map
+  MD lines, owner-ignored with an ambiguity refusal — the 1165/1122
+  SAMs need nothing: runtime-stable there by construction) plus two
+  SAM rows in `tools/run-live.sh` (factory through the server chain,
+  provider through the pinned client.txt — client classes never ship
+  server-side; narrow map 33→35). Live proof TODO.
 - Custom entity E0 (hub `decisions/SPAWN.md`): `MatouEntity` shell
   replaced by the generic beast (`extends Pig`, pig shape/AI/sounds
   reused), `Example1Mod` queues it on a `DeferredRegister` over
