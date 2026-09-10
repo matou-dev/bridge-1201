@@ -11,9 +11,18 @@ import net.minecraft.world.level.Level;
  * {@code (Level,double,double,double,ItemStack)} — ctors are never
  * obfuscated, so no narrow-map row). The forge side lands one carrier
  * per due drop through this type.
+ *
+ * <p>Companion shape (loot proof, DEV ONLY): the autoplay companion polls
+ * carriers through {@code getItem} (measured via server.txt +
+ * joined.tsrg v2 + javap, same practice). Pinned by the AUTOPLAY derive
+ * in hub tools/run-client.sh (want.txt) — drift fails loudly.
  */
 public class ItemEntity extends Entity {
     public ItemEntity(Level level, double x, double y, double z,
             ItemStack stack) {
+    }
+
+    public ItemStack getItem() {
+        return null;
     }
 }

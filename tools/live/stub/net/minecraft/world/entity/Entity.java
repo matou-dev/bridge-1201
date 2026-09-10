@@ -13,6 +13,13 @@ import net.minecraft.world.level.Level;
  * port), {@code getX/getY/getZ} are public {@code ()D} methods (the 1.12
  * {@code posX} field shape does not port). Pinned by tools/run-live.sh
  * (narrow map) — drift fails loudly.
+ *
+ * <p>Companion shape (loot proof, DEV ONLY): the autoplay companion
+ * positions its pig victim through {@code setPos} and removes it through
+ * {@code discard} (the 1.12 {@code setDead} shape does not port — measured
+ * via server.txt + joined.tsrg v2 + javap, same practice). Pinned by the
+ * AUTOPLAY derive in hub tools/run-client.sh (want.txt) — drift fails
+ * loudly.
  */
 public class Entity {
     public Level level() {
@@ -29,5 +36,11 @@ public class Entity {
 
     public double getZ() {
         return 0;
+    }
+
+    public void setPos(double x, double y, double z) {
+    }
+
+    public void discard() {
     }
 }

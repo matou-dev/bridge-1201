@@ -32,5 +32,15 @@ public class BlockBehaviour {
         public Block getBlock() {
             return null;
         }
+
+        /**
+         * Companion shape (loot proof, DEV ONLY): the autoplay companion
+         * probes air through this (measured via server.txt + joined.tsrg
+         * v2 + javap, same practice). Pinned by the AUTOPLAY derive in
+         * hub tools/run-client.sh (want.txt) — drift fails loudly.
+         */
+        public boolean isAir() {
+            return false;
+        }
     }
 }

@@ -8,3 +8,20 @@ net.minecraftforge.event.TickEvent$ClientTickEvent ClientTickEvent(
 net.minecraftforge.event.TickEvent$ServerTickEvent ServerTickEvent(
 net.minecraftforge.event.TickEvent$Phase END
 net.minecraftforge.common.MinecraftForge EVENT_BUS
+# Loot proof (LOOT=1): server-level ticks (dim scope rides the level, the
+# side rides the vanilla isClientSide method — no LogicalSide surface),
+# the two simulated event ctors, and the three Forge registries the
+# companion resolves (ore, diamond, pig — no vanilla field touched). All
+# measured against the pinned 47.2.0 universal, same practice as above.
+# IEventBus.post lives in the eventbus lib, not the universal: unstaged
+# here, proven live (loud NoSuchMethodError on drift, never silent).
+net.minecraftforge.event.TickEvent$LevelTickEvent level
+net.minecraftforge.event.TickEvent side
+net.minecraftforge.event.TickEvent phase
+net.minecraftforge.event.level.BlockEvent$BreakEvent BreakEvent(
+net.minecraftforge.event.entity.living.LivingDropsEvent LivingDropsEvent(
+net.minecraftforge.registries.ForgeRegistries BLOCKS
+net.minecraftforge.registries.ForgeRegistries ITEMS
+net.minecraftforge.registries.ForgeRegistries ENTITY_TYPES
+net.minecraftforge.registries.IForgeRegistry getValue(
+net.minecraftforge.registries.IForgeRegistry containsKey(

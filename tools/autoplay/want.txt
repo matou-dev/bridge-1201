@@ -14,5 +14,39 @@
 # through the narrow map). The companion only counts server ticks and
 # quits. A wrong Mojmap name dies loudly at runtime
 # (NoSuchMethodError), never silently.
+#
+# No vanilla FIELD line: the Mojmap autoplay derive pins methods only
+# (hub tools/run-client.sh asserts M lines) — the companion resolves its
+# three vanilla objects (ore block, diamond item, pig type) through the
+# Forge registries (universal-pin.txt, never obfuscated) and gates dim-0
+# through ResourceKey.location (a method), so no F row is ever needed.
 M net/minecraft/client/Minecraft getInstance m_91087_ ()Lnet/minecraft/client/Minecraft; 1
 M net/minecraft/client/Minecraft stop m_91395_ ()V 0
+# Loot proof (LOOT=1): server-side simulated harvests — an ore harvest
+# (place + clear + BreakEvent post, spike honesty standard) plus a pig
+# kill (spawned pig + LivingDropsEvent post, T1 any-kill-pays — hub
+# decisions/LOOT.md), then diamond-carrier polls. Owner discipline (hub
+# decisions/LOOT.md): inherited vanilla members go through the declaring
+# stub type (Entity for level/coords/pos/discard, BlockStateBase for
+# isAir, EntityGetter for the carrier poll — never the pig, the state,
+# or the level). Static-ness documentary on methods (exact SRG +
+# descriptor + javap is the pin).
+M net/minecraft/world/level/Level setBlock m_7731_ (Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;I)Z 0
+M net/minecraft/world/level/Level getBlockState m_8055_ (Lnet/minecraft/core/BlockPos;)Lnet/minecraft/world/level/block/state/BlockState; 0
+M net/minecraft/world/level/Level removeBlock m_7471_ (Lnet/minecraft/core/BlockPos;Z)Z 0
+M net/minecraft/world/level/Level dimension m_46472_ ()Lnet/minecraft/resources/ResourceKey; 0
+M net/minecraft/world/level/Level isClientSide m_5776_ ()Z 0
+M net/minecraft/world/level/block/Block defaultBlockState m_49966_ ()Lnet/minecraft/world/level/block/state/BlockState; 0
+M net/minecraft/world/level/block/state/BlockBehaviour$BlockStateBase isAir m_60795_ ()Z 0
+M net/minecraft/server/level/ServerLevel players m_6907_ ()Ljava/util/List; 0
+M net/minecraft/server/level/ServerLevel addFreshEntity m_7967_ (Lnet/minecraft/world/entity/Entity;)Z 0
+M net/minecraft/world/entity/Entity level m_9236_ ()Lnet/minecraft/world/level/Level; 0
+M net/minecraft/world/entity/Entity getX m_20185_ ()D 0
+M net/minecraft/world/entity/Entity getY m_20186_ ()D 0
+M net/minecraft/world/entity/Entity getZ m_20189_ ()D 0
+M net/minecraft/world/entity/Entity setPos m_6034_ (DDD)V 0
+M net/minecraft/world/entity/Entity discard m_146870_ ()V 0
+M net/minecraft/world/entity/item/ItemEntity getItem m_32055_ ()Lnet/minecraft/world/item/ItemStack; 0
+M net/minecraft/world/item/ItemStack getItem m_41720_ ()Lnet/minecraft/world/item/Item; 0
+M net/minecraft/world/level/EntityGetter getEntitiesOfClass m_45976_ (Ljava/lang/Class;Lnet/minecraft/world/phys/AABB;)Ljava/util/List; 0
+M net/minecraft/resources/ResourceKey location m_135782_ ()Lnet/minecraft/resources/ResourceLocation; 0

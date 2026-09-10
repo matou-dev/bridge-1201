@@ -303,10 +303,15 @@ public final class MatouBridgeMod {
             return;
         }
         ServerLevel level = (ServerLevel) w;
-        if (level.isClientSide()) {
+        // Owner discipline (measured live on 1201: NoSuchMethodError
+        // ServerLevel.isClientSide — Reobf maps the exact bytecode owner,
+        // so inherited vanilla members go through the declaring Level
+        // type, never the narrowed ServerLevel — same upcast as onKill).
+        Level lvl = level;
+        if (lvl.isClientSide()) {
             return;
         }
-        if (!Level.OVERWORLD.equals(level.dimension())) {
+        if (!Level.OVERWORLD.equals(lvl.dimension())) {
             return;
         }
         // Owner discipline (hub decisions/LOOT.md): coords go through the
