@@ -276,13 +276,9 @@ pin_method "net/minecraft/world/level/block/state/BlockBehaviour\$Properties/str
 pin_field "net/minecraft/world/level/Level/OVERWORLD"
 pin_method "net/minecraft/server/level/ServerLevel/addFreshEntity" "(Lnet/minecraft/world/entity/Entity;)Z"
 pin_method "net/minecraft/world/entity/Entity/level" "()Lnet/minecraft/world/level/Level;"
-pin_method "net/minecraft/world/entity/Entity/getX" "()D"
-pin_method "net/minecraft/world/entity/Entity/getY" "()D"
-pin_method "net/minecraft/world/entity/Entity/getZ" "()D"
+for m in getX getY getZ; do pin_method "net/minecraft/world/entity/Entity/$m" "()D"; done
 pin_method "net/minecraft/world/level/Level/isClientSide" "()Z"
-pin_method "net/minecraft/core/Vec3i/getX" "()I"
-pin_method "net/minecraft/core/Vec3i/getY" "()I"
-pin_method "net/minecraft/core/Vec3i/getZ" "()I"
+for m in getX getY getZ; do pin_method "net/minecraft/core/Vec3i/$m" "()I"; done
 pin_method "net/minecraft/world/level/block/state/BlockBehaviour\$BlockStateBase/getBlock" "()Lnet/minecraft/world/level/block/Block;"
 pin_method "net/minecraft/world/entity/Entity/getId" "()I"
 pin_method "net/minecraft/world/entity/Entity/isAlive" "()Z"
@@ -327,11 +323,7 @@ for f in x y z; do pin_field "net/minecraft/world/phys/Vec3/$f"; done
 # table-driven — every member name stays literal and grep-able.
 for m in addAdditionalSaveData readAdditionalSaveData; do pin_method "net/minecraft/world/entity/animal/Pig/$m" "(Lnet/minecraft/nbt/CompoundTag;)V"; done
 for spec in "contains (Ljava/lang/String;)Z" "getString (Ljava/lang/String;)Ljava/lang/String;" "putString (Ljava/lang/String;Ljava/lang/String;)V"; do pin_method "net/minecraft/nbt/CompoundTag/${spec%% *}" "${spec#* }"; done
-pin_field "net/minecraft/world/entity/Entity/xo"
-pin_field "net/minecraft/world/entity/Entity/yo"
-pin_field "net/minecraft/world/entity/Entity/zo"
-pin_field "net/minecraft/world/entity/Entity/yRotO"
-pin_field "net/minecraft/world/entity/Entity/xRotO"
+for f in xo yo zo yRotO xRotO; do pin_field "net/minecraft/world/entity/Entity/$f"; done
 # Renderer client-only rows (hub decisions/MATOU_MODEL.md +
 # GL_INSTANCING_ADAPTER.md): every net/minecraft/client/* + com/mojang/*
 # member the client-only InstancedMeshRenderer touches. Anchors are
@@ -367,16 +359,11 @@ pin_uni 'net.minecraftforge.event.TickEvent$Phase' 'END'
 pin_uni 'net.minecraftforge.common.MinecraftForge' 'EVENT_BUS'
 pin_uni 'net.minecraftforge.registries.ForgeRegistries' 'BLOCKS'
 pin_uni 'net.minecraftforge.registries.ForgeRegistries' 'ITEMS'
-pin_uni 'net.minecraftforge.registries.IForgeRegistry' 'getValue('
-pin_uni 'net.minecraftforge.registries.IForgeRegistry' 'containsKey('
-pin_uni 'net.minecraftforge.registries.DeferredRegister' 'create('
-pin_uni 'net.minecraftforge.registries.DeferredRegister' 'register('
-pin_uni 'net.minecraftforge.registries.RegistryObject' 'get('
-pin_uni 'net.minecraftforge.registries.RegistryObject' 'getId('
+for m in 'getValue(' 'containsKey('; do pin_uni 'net.minecraftforge.registries.IForgeRegistry' "$m"; done
+for m in 'create(' 'register('; do pin_uni 'net.minecraftforge.registries.DeferredRegister' "$m"; done
+for m in 'get(' 'getId('; do pin_uni 'net.minecraftforge.registries.RegistryObject' "$m"; done
 pin_uni 'net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent' 'FMLCommonSetupEvent('
-pin_uni 'net.minecraftforge.event.level.BlockEvent' 'getLevel('
-pin_uni 'net.minecraftforge.event.level.BlockEvent' 'getPos('
-pin_uni 'net.minecraftforge.event.level.BlockEvent' 'getState('
+for m in 'getLevel(' 'getPos(' 'getState('; do pin_uni 'net.minecraftforge.event.level.BlockEvent' "$m"; done
 pin_uni 'net.minecraftforge.event.level.BlockEvent$BreakEvent' 'BreakEvent('
 pin_uni 'net.minecraftforge.event.entity.living.LivingEvent' 'getEntity('
 pin_uni 'net.minecraftforge.event.entity.living.LivingDropsEvent' 'LivingDropsEvent('
@@ -403,18 +390,13 @@ pin_uni 'net.minecraftforge.client.event.EntityRenderersEvent$RegisterRenderers'
 # fires RenderLevelStageEvent, gated on Stage.AFTER_ENTITIES, with the
 # partial tick, the PoseStack and the org.joml projection matrix on the
 # event — the 1.16.5 RenderWorldLastEvent does not exist here).
-pin_uni 'net.minecraftforge.client.event.RenderLevelStageEvent' 'getStage('
-pin_uni 'net.minecraftforge.client.event.RenderLevelStageEvent' 'getPoseStack('
-pin_uni 'net.minecraftforge.client.event.RenderLevelStageEvent' 'getProjectionMatrix('
-pin_uni 'net.minecraftforge.client.event.RenderLevelStageEvent' 'getPartialTick('
+for m in 'getStage(' 'getPoseStack(' 'getProjectionMatrix(' 'getPartialTick('; do pin_uni 'net.minecraftforge.client.event.RenderLevelStageEvent' "$m"; done
 pin_uni 'net.minecraftforge.client.event.RenderLevelStageEvent$Stage' 'AFTER_ENTITIES'
 pin_game() {
   "$J17/javap" -p -cp "$SRG_GAME" "$1" 2>/dev/null | grep -q "$2" \
     || { echo "FAIL d3-live : game pin unmet <$1 :: $2>"; exit 1; }
 }
-pin_game 'net.minecraft.world.level.Level' 'm_7731_('
-pin_game 'net.minecraft.world.level.Level' 'm_46472_('
-pin_game 'net.minecraft.world.level.Level' 'f_46428_'
+for m in 'm_7731_(' 'm_46472_(' 'f_46428_'; do pin_game 'net.minecraft.world.level.Level' "$m"; done
 pin_game 'net.minecraft.world.level.block.Block' 'm_49966_('
 pin_game 'net.minecraft.world.entity.MobCategory' 'CREATURE'
 pin_lib() {
