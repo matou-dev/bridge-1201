@@ -88,14 +88,18 @@ import net.minecraftforge.registries.ForgeRegistries;
   * {@code ServerLevel.players}.
   *
   * <p>Loot proof (LOOT=1, DEV ONLY): at LOOT_HARVEST_TICK overworld
- * server-level ticks the companion harvests the registered ore at an
- * isolated coords outside the union slices (8,10,8 — place + clear + a
- * {@code BreakEvent} post authored by the joined player, spike honesty
- * standard) and, five ticks later, kills the spawned registered beast at
- * (12,10,8) with a simulated {@code LivingDropsEvent} post
- * (single-table scope — hub decisions/LOOT.md) — then polls both spots
- * for the diamond carrier the bridge loot sink spawns per due drop. The
- * posts are simulated, honestly: place + clear + bus posts exercise the
+  * server-level ticks the companion harvests the registered ore at an
+  * isolated coords outside the union slices (8,10,8 — place + clear + a
+  * {@code BreakEvent} post authored by the joined player, spike honesty
+  * standard), five ticks later kills the registered {@code my_beast}
+  * at (12,10,8) and five ticks after that the registered
+  * {@code my_brute} at (14,10,8), each with a simulated
+  * {@code LivingDropsEvent} post carrying that mob's explicit identity
+  * (distinct-drops tranche, hub decisions/LOOT.md — same triple as the
+  * etage-1 gate) — then polls the three spots for the per-mob carriers
+  * the bridge loot sink spawns per due drop (ore 1x {@code my_gem},
+  * beast 1x {@code my_gem}, brute 2x {@code my_brute_gem}). The
+  * posts are simulated, honestly: place + clear + bus posts exercise the
  * shipped hooks ({@code onHarvest} reads the level/dim/block through the
  * 47.2.0 shapes; {@code onKill} reads the entity only) through the live
  * seal ({@code LootSeal}), the pure {@code LootJob} and the live sink —
@@ -129,13 +133,15 @@ import net.minecraftforge.registries.ForgeRegistries;
  * <p>Spawn proof (SPAWN=1, DEV ONLY): the bridge itself lands budgeted
  * beasts (SPAWN=1 also arms {@code MatouBridgeMod.spawnTick} -- one flag
  * drives both sides, so LOOT=1 runs stay spawn-free and their own beast
- * never meets the cap veto). The companion never spawns here: it polls
- * the loaded beasts the bridge landed up to cap, records the maximum seen
- * (past cap fails loudly -- the veto owns that bound), kills the first
- * beast past SPAWN_KILL_TICK with a simulated {@code LivingDropsEvent}
- * post (loot honesty standard -- the kill pays through the loot table,
- * proving the spawn-to-loot chain), then polls the diamond carrier at
- * the kill spot. Each mob's max health is polled once against its own
+  * never meets the cap veto). The companion never spawns here: it polls
+  * the loaded beasts the bridge landed up to cap, records the maximum seen
+  * (past cap fails loudly -- the veto owns that bound), kills the first
+  * {@code my_beast} past SPAWN_KILL_TICK with a simulated {@code LivingDropsEvent}
+  * post (loot honesty standard -- the kill pays that mob's table entry
+  * through the per-mob loot wire, proving the spawn-to-loot chain for the
+  * beast leg; the brute chain rides the LOOT=1 leg, never a quiet pick
+  * here), then polls the gem carrier at
+  * the kill spot. Each mob's max health is polled once against its own
  * spec (SPAWN_HP_BEAST / SPAWN_HP_BRUTE, hp tranche -- the bridge
  * applies the content hp per landing; a diverged read-back fails loudly
  * here too). Custom-entity
@@ -176,8 +182,12 @@ public class AutoplayMod {
     static final int LOOT_BEAST_X = 12;
     static final int LOOT_BEAST_Y = 10;
     static final int LOOT_BEAST_Z = 8;
+    static final int LOOT_BRUTE_X = 14;
+    static final int LOOT_BRUTE_Y = 10;
+    static final int LOOT_BRUTE_Z = 8;
     static final int LOOT_HARVEST_TICK = 1000;
     static final int LOOT_BEAST_DELAY = 5;
+    static final int LOOT_BRUTE_DELAY = 5;
     static final int LOOT_TIMEOUT = 600;
     static final boolean SPAWN = "1".equals(System.getenv("SPAWN"));
     /** Mirrors the effective cap (content {@code owned.matou} per-mob
@@ -234,11 +244,14 @@ public class AutoplayMod {
     volatile int repopTick = -1;
     volatile int lootOreTick = -1;
     volatile int lootBeastTick = -1;
+    volatile int lootBruteTick = -1;
     volatile boolean oreDropped = false;
     volatile boolean beastDropped = false;
+    volatile boolean bruteDropped = false;
     volatile boolean lootFailed = false;
     volatile int oreDropTick = -1;
     volatile int beastDropTick = -1;
+    volatile int bruteDropTick = -1;
     volatile boolean beastSeen = false;
     volatile boolean hpSeenBeast = false;
     volatile boolean hpSeenBrute = false;
@@ -267,6 +280,7 @@ public class AutoplayMod {
     volatile MatouEntity combatVictimBrute = null;
     ServerLevel world = null;
     Item diamond = null;
+    Item bruteGemItem = null;
     boolean foreignNoted = false;
     boolean playerNoted = false;
     boolean done = false;
@@ -349,7 +363,9 @@ public class AutoplayMod {
                         + LOOT_ORE_X + "," + LOOT_ORE_Y + ","
                         + LOOT_ORE_Z + ":" + LOOT_ORE_BLOCK + " + beast "
                         + LOOT_BEAST_X + "," + LOOT_BEAST_Y + ","
-                        + LOOT_BEAST_Z + "> harvestAt="
+                        + LOOT_BEAST_Z + ":my_beast + brute "
+                        + LOOT_BRUTE_X + "," + LOOT_BRUTE_Y + ","
+                        + LOOT_BRUTE_Z + ":my_brute> harvestAt="
                         + LOOT_HARVEST_TICK + " (LOOT=1)");
             }
             if (SPAWN) {
@@ -501,15 +517,20 @@ public class AutoplayMod {
         } else if (lootOreTick >= 0 && lootBeastTick < 0
                 && worldTicks >= lootOreTick + LOOT_BEAST_DELAY) {
             lootBeast();
+        } else if (lootBeastTick >= 0 && lootBruteTick < 0
+                && worldTicks >= lootBeastTick + LOOT_BRUTE_DELAY) {
+            lootBrute();
         }
         if ((lootOreTick >= 0 && !oreDropped)
-                || (lootBeastTick >= 0 && !beastDropped)) {
+                || (lootBeastTick >= 0 && !beastDropped)
+                || (lootBruteTick >= 0 && !bruteDropped)) {
             lootPoll();
         }
-        if (!(oreDropped && beastDropped)
+        if (!(oreDropped && beastDropped && bruteDropped)
                 && worldTicks > LOOT_HARVEST_TICK + LOOT_TIMEOUT) {
             lootFail("timeout (oreDropped=" + oreDropped + " beastDropped="
-                    + beastDropped + " " + LOOT_TIMEOUT
+                    + beastDropped + " bruteDropped=" + bruteDropped
+                    + " " + LOOT_TIMEOUT
                     + " ticks after harvest at worldTick "
                     + LOOT_HARVEST_TICK + ")");
         }
@@ -589,9 +610,10 @@ public class AutoplayMod {
         if (lootPlayer() == null) {
             return;
         }
-        // Custom entity (hub decisions/SPAWN.md): the loot kill lands on
-        // the registered beast — every kill pays the single table entry
-        // (per-mob filtering stays a re-opener). A wandering vanilla pig
+        // Custom entity (hub decisions/SPAWN.md): the loot kills land on
+        // the registered beasts with their explicit mob identities
+        // (distinct-drops tranche, hub decisions/LOOT.md — never the
+        // silent first-mob adoption here). A wandering vanilla pig
         // would take the scripted kill dishonestly, so the species is
         // exact here, like the bridge census.
         EntityType<MatouEntity> type = Example1Mod.beastType();
@@ -600,6 +622,7 @@ public class AutoplayMod {
             return;
         }
         MatouEntity beast = new MatouEntity(type, world);
+        beast.setMob("my_beast");
         // Owner discipline (hub decisions/LOOT.md): inherited vanilla
         // members go through the declaring stub type, never the beast.
         Entity body = beast;
@@ -615,8 +638,36 @@ public class AutoplayMod {
         lootBeastTick = worldTicks;
         System.out.println("[MatouAutoplay] loot beast killed <"
                 + LOOT_BEAST_X + "," + LOOT_BEAST_Y + ","
-                + LOOT_BEAST_Z + ":beast> at worldTick "
+                + LOOT_BEAST_Z + ":my_beast> at worldTick "
                 + lootBeastTick);
+    }
+
+    private void lootBrute() {
+        if (lootPlayer() == null) {
+            return;
+        }
+        EntityType<MatouEntity> type = Example1Mod.beastType();
+        if (type == null) {
+            lootFail("no beast type at worldTick " + worldTicks);
+            return;
+        }
+        MatouEntity brute = new MatouEntity(type, world);
+        brute.setMob("my_brute");
+        Entity body = brute;
+        body.setPos(LOOT_BRUTE_X + 0.5, LOOT_BRUTE_Y,
+                LOOT_BRUTE_Z + 0.5);
+        if (!world.addFreshEntity(brute)) {
+            lootFail("brute spawn refused at worldTick " + worldTicks);
+            return;
+        }
+        MinecraftForge.EVENT_BUS.post(new LivingDropsEvent(brute, null,
+                new ArrayList<ItemEntity>(), 0, true));
+        body.discard();
+        lootBruteTick = worldTicks;
+        System.out.println("[MatouAutoplay] loot brute killed <"
+                + LOOT_BRUTE_X + "," + LOOT_BRUTE_Y + ","
+                + LOOT_BRUTE_Z + ":my_brute> at worldTick "
+                + lootBruteTick);
     }
 
     /**
@@ -641,9 +692,35 @@ public class AutoplayMod {
         return diamond;
     }
 
+    /**
+     * Brute gem through the Forge registry (same no-field reason as
+     * above). Loud on absence: a defaulted item polls nothing silently
+     * otherwise.
+     */
+    private Item bruteGem() {
+        if (bruteGemItem != null) {
+            return bruteGemItem;
+        }
+        ResourceLocation id = new ResourceLocation("example1:my_brute_gem");
+        if (!ForgeRegistries.ITEMS.containsKey(id)) {
+            lootFail("unknown <example1:my_brute_gem> (want registered brute gem)");
+            return null;
+        }
+        bruteGemItem = ForgeRegistries.ITEMS.getValue(id);
+        if (bruteGemItem == null) {
+            lootFail("unknown <example1:my_brute_gem> (want registered brute gem)");
+            return null;
+        }
+        return bruteGemItem;
+    }
+
     private void lootPoll() {
         Item gem = diamond();
         if (gem == null) {
+            return;
+        }
+        Item brute = bruteGem();
+        if (brute == null) {
             return;
         }
         // Owner discipline (hub decisions/LOOT.md): the carrier poll goes
@@ -682,6 +759,28 @@ public class AutoplayMod {
                             + ", want immediate)");
                     break;
                 }
+            }
+        }
+        if (!bruteDropped && lootBruteTick >= 0) {
+            List<ItemEntity> found = getter.getEntitiesOfClass(
+                    ItemEntity.class, box(LOOT_BRUTE_X, LOOT_BRUTE_Y,
+                            LOOT_BRUTE_Z));
+            int near = 0;
+            for (ItemEntity item : found) {
+                if (carrierOf(item, brute)
+                        && near(item, LOOT_BRUTE_X, LOOT_BRUTE_Y,
+                                LOOT_BRUTE_Z)) {
+                    near++;
+                }
+            }
+            if (near >= 2) {
+                bruteDropped = true;
+                bruteDropTick = worldTicks;
+                System.out.println("[MatouAutoplay] loot brute dropped "
+                        + "<example1:my_brute_gem> x2 at worldTick "
+                        + bruteDropTick + " (elapsed "
+                        + (bruteDropTick - lootBruteTick)
+                        + ", want immediate)");
             }
         }
     }
@@ -727,7 +826,6 @@ public class AutoplayMod {
         int beasts = 0;
         int beastN = 0;
         int bruteN = 0;
-        MatouEntity first = null;
         MatouEntity firstBeast = null;
         MatouEntity firstBrute = null;
         for (MatouEntity beast : found) {
@@ -742,9 +840,6 @@ public class AutoplayMod {
                 continue;
             }
             beasts++;
-            if (first == null) {
-                first = beast;
-            }
             String mob = beast.mobOrFirst();
             if ("my_brute".equals(mob)) {
                 bruteN++;
@@ -834,9 +929,16 @@ public class AutoplayMod {
                 }
             }
         }
-        if (!beastKilled && beastSeen && first != null
+        if (!beastKilled && beastSeen
                 && worldTicks >= SPAWN_KILL_TICK) {
-            spawnKill(first);
+            if (firstBeast != null) {
+                spawnKill(firstBeast);
+            } else {
+                spawnFail("no my_beast to kill at worldTick " + worldTicks
+                        + " (the spawn-to-loot chain pins the beast leg — "
+                        + "killing a brute would pay brute-gem, never "
+                        + "a quiet pick)");
+            }
         }
         if (beastKilled && !spawnCarrierDropped) {
             spawnPoll();
@@ -864,7 +966,8 @@ public class AutoplayMod {
         beastKilled = true;
         killTick = worldTicks;
         System.out.println("[MatouAutoplay] spawn beast killed <"
-                + killX + "," + killY + "," + killZ + ":beast> at "
+                + killX + "," + killY + "," + killZ + ":"
+                + beast.mobOrFirst() + "> at "
                 + "worldTick " + killTick);
     }
 
@@ -1143,7 +1246,7 @@ public class AutoplayMod {
         }
         if (serverTicks >= WAIT_SERVER_TICKS
                 && (!SPIKE || repopped)
-                && (!LOOT || (oreDropped && beastDropped))
+                && (!LOOT || (oreDropped && beastDropped && bruteDropped))
                 && (!SPAWN || (beastSeen && spawnCarrierDropped))
                 && (!COMBAT
                         || (combatResolvedBeast && combatResolvedBrute))
