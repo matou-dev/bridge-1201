@@ -20,8 +20,32 @@ import net.minecraft.world.level.Level;
  * via server.txt + joined.tsrg v2 + javap, same practice). Pinned by the
  * AUTOPLAY derive in hub tools/run-client.sh (want.txt) — drift fails
  * loudly.
+ *
+ * <p>Renderer shape (hub decisions/MATOU_MODEL.md + GL_INSTANCING_ADAPTER.md):
+ * frame interpolation rides the {@code xo/yo/zo} olds (public doubles —
+ * the 1.12 {@code prevPos} shape does not port) with the current
+ * {@code getX/getY/getZ}, yaw/pitch ride the current
+ * {@code getYRot/getXRot} (public {@code ()F} methods). Measured via
+ * server.txt + joined.tsrg v2 + javap on the pinned 47.2.0 inner server
+ * jar (obf {@code J/K/L}, {@code M/N} for the {@code yRotO/xRotO} olds,
+ * {@code dy/dA} for the getters — same practice). Pinned by
+ * tools/run-live.sh (narrow map) — drift fails loudly.
  */
 public class Entity {
+    public double xo;
+    public double yo;
+    public double zo;
+    public float yRotO;
+    public float xRotO;
+
+    public float getYRot() {
+        return 0;
+    }
+
+    public float getXRot() {
+        return 0;
+    }
+
     public Level level() {
         return null;
     }

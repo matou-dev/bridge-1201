@@ -81,6 +81,7 @@ java -cp build/sib fr.iamacat.bridge.ForgeContentCheck
 java -cp build/sib fr.iamacat.bridge.loot.LootCheck
 java -cp build/sib fr.iamacat.bridge.spawn.SpawnCheck
 java -cp build/sib fr.iamacat.bridge.spike.RepopCheck
+java -cp build/sib fr.iamacat.bridge.model.ModelWireCheck
 # Etage 2 : forge/ seul touche MC/Forge (1.20.1). Stub shape-only, pas de
 # MC_JAR requis : vert partout, le live D3 prouve contre le vrai jar
 # (etage 3, LIVE=1).
@@ -89,6 +90,18 @@ java -cp build/sib fr.iamacat.bridge.spike.RepopCheck
 rm -rf forge/build && mkdir -p forge/build
 javac --release 8 -cp build/sib -d forge/build $(find forge/src tools/live/stub -name '*.java')
 echo "ok (forge-stub)"
+# Visual-tranche tripwire (found 2026-09-11 on 1122: the autoplay
+# companion had not compiled since the item tranche because no gate
+# built it, only run-client.sh AUTOPLAY=1 did, at run time). DEV-only
+# compile against stubs, never shipped, never run here;
+# tools/autoplay/stub is optional (1201 merged its shapes into
+# tools/live/stub — same duplicate-class trouvaille as 1122/1165/1710).
+mkdir -p build/auto
+AUTO_SRC="tools/autoplay/src tools/live/stub"
+[ -d tools/autoplay/stub ] && AUTO_SRC="$AUTO_SRC tools/autoplay/stub"
+# shellcheck disable=SC2086
+javac --release 8 -cp build/sib:forge/build -d build/auto $(find $AUTO_SRC -name '*.java')
+echo "ok (autoplay-compile)"
 # Etage 3 (D3) : live opt-in. Default skip keeps CI green without
 # network/Java 17; LIVE=1 fails loudly without them, never silently.
 if [ "${LIVE:-}" != "1" ]; then

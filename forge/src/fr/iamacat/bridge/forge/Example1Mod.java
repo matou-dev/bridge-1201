@@ -242,6 +242,7 @@ public final class Example1Mod {
             // is a Pig subtype) — the beast renders as a vanilla pig
             // until the custom-renderer tranche.
             event.registerEntityRenderer(BEAST.get(), PigRenderer::new);
+            InstancedMeshRenderer.initClient();
         }
     }
 

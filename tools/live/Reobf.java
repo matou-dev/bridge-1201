@@ -56,7 +56,13 @@ public final class Reobf {
         final Map<String, String> samM = samMethods;
         Remapper remapper = new Remapper() {
             public String mapMethodName(String owner, String name, String desc) {
-                if (owner.startsWith("net/minecraft/")) {
+                // Mojang owners remap like vanilla ones (the renderer
+                // tranche's PoseStack.last/pose are com/mojang with SRG
+                // members at runtime — a net-only gate would pass them
+                // through silently to die linking live; caught offline at
+                // E0 by reobfing the staged jar and grepping the pool).
+                if (owner.startsWith("net/minecraft/")
+                        || owner.startsWith("com/mojang/")) {
                     String hit = m.get(owner + "." + name + desc);
                     if (hit != null) {
                         return hit;
@@ -65,7 +71,8 @@ public final class Reobf {
                 return name;
             }
             public String mapFieldName(String owner, String name, String desc) {
-                if (owner.startsWith("net/minecraft/")) {
+                if (owner.startsWith("net/minecraft/")
+                        || owner.startsWith("com/mojang/")) {
                     String hit = f.get(owner + "." + name);
                     if (hit != null) {
                         return hit;
