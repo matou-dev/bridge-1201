@@ -42,6 +42,26 @@
 # loudly at step 6, never silently.
 set -eu
 cd "$(dirname "$0")/.."
+# Shared harness steps (hub SSOT, thin version wrapper — hub
+# decisions/LIVE_SHELL_COMMON.md): sibling-absent fails loud, same shim
+# discipline as tools/run-client.sh.
+[ -f ../hub/tools/live-common.sh ] \
+  || { echo "FAIL d3-live : hub sibling absent (clone hub next to bridge-1201 — live steps source ../hub/tools/live-common.sh)"; exit 1; }
+[ -f ../hub/tools/live-derive.sh ] \
+  || { echo "FAIL d3-live : hub sibling absent (clone hub next to bridge-1201 — derive steps source ../hub/tools/live-derive.sh)"; exit 1; }
+# shellcheck disable=SC1091
+. ../hub/tools/live-common.sh
+# shellcheck disable=SC1091
+. ../hub/tools/live-derive.sh
+live_init "d3-live"
+# Era-bound adapters: the hub libs own the mechanics; these bind the
+# caller-owned map/jars so every pin/jar call site below stays byte-identical.
+# (pin_game stays local: the SRG game jar has no lib helper.)
+pin_method() { live_pin_method "$SRG_NARROW" "$@"; }
+pin_field() { live_pin_field "$SRG_NARROW" "$@"; }
+pin_uni() { live_pin_uni "$J17" "$UNI" "$@"; }
+mkjar() { live_mkjar "$1" "$2" "$BLD/MANIFEST.MF" "$J17/jar" "$EPOCH"; }
+normjar() { live_normjar "$1" "$EPOCH"; }
 D3_DIR="${D3_DIR:-${TMPDIR:-/tmp}/matou-d3-live}"
 JAVA17_HOME="${JAVA17_HOME:-/usr/lib/jvm/java-17-openjdk}"
 FORGE_URL="${FORGE_URL:-https://maven.minecraftforge.net/net/minecraftforge/forge/1.20.1-47.2.0/forge-1.20.1-47.2.0-installer.jar}"
@@ -87,37 +107,13 @@ fi
 mkdir -p "$D3_DIR"
 SERV="$D3_DIR/server"
 mkdir -p "$SERV"
-# 1a. D3_DIR preflight: docker runs leave root-owned leftovers (build/,
-#     world/, logs/, matou-content/) that a host run cannot clear file by
-#     file (rm needs write on the root-owned parent). Fail fast with the fix
-#     instead of dying mid-run or reusing stale state silently.
-if [ -e "$D3_DIR" ]; then
-  BAD_OWNER=$(find "$D3_DIR" ! -user "$(id -un)" -print -quit 2>/dev/null || true)
-  if [ -n "$BAD_OWNER" ]; then
-    echo "FAIL d3-live : D3_DIR=<$D3_DIR> has non-owned leftovers (e.g. <$BAD_OWNER> from a docker run as root)"
-    echo "fix: sudo rm -rf <$D3_DIR/build> <$D3_DIR/server/world> <$D3_DIR/server/logs> <$D3_DIR/server/matou-content> OR D3_DIR=/tmp/matou-d3-clean $0"
-    exit 1
-  fi
-  if [ ! -w "$D3_DIR" ]; then
-    echo "FAIL d3-live : D3_DIR=<$D3_DIR> not writable (fix ownership or point D3_DIR at a user-owned dir)"
-    exit 1
-  fi
-fi
-if [ ! -f "$D3_DIR/forge-installer.jar" ]; then
-  if [ "${D3_OFFLINE:-}" = "1" ]; then
-    echo "FAIL d3-live : offline and installer absent ($D3_DIR/forge-installer.jar)"
-    exit 1
-  fi
-  curl -sL -o "$D3_DIR/forge-installer.jar" "$FORGE_URL" \
-    || { echo "FAIL d3-live : installer download"; exit 1; }
-fi
-echo "$INSTALLER_SHA1  $D3_DIR/forge-installer.jar" | sha1sum -c - >/dev/null 2>&1 \
-  || { echo "FAIL d3-live : installer sha1 drift (want $INSTALLER_SHA1)"; exit 1; }
+# 1a. D3_DIR preflight (docker root-owned leftovers fail fast, loudly).
+live_preflight_dir "D3_DIR" "$D3_DIR"
+live_fetch "$D3_DIR/forge-installer.jar" "$FORGE_URL" "$INSTALLER_SHA1" "${D3_OFFLINE:-0}"
 LIB="$SERV/libraries"
 UNI="$LIB/net/minecraftforge/forge/1.20.1-47.2.0/forge-1.20.1-47.2.0-universal.jar"
 if [ ! -f "$UNI" ]; then
-  (cd "$SERV" && "$J17/java" -jar "$D3_DIR/forge-installer.jar" --installServer >/dev/null 2>&1) \
-    || { echo "FAIL d3-live : --installServer"; exit 1; }
+  live_install_server "$SERV" "$D3_DIR/forge-installer.jar" "$J17"
 fi
 echo "$UNIVERSAL_SHA1  $UNI" | sha1sum -c - >/dev/null 2>&1 \
   || { echo "FAIL d3-live : universal sha1 drift (want $UNIVERSAL_SHA1)"; exit 1; }
@@ -154,26 +150,8 @@ JMLLANG="$LIB/net/minecraftforge/javafmllanguage/1.20.1-47.2.0/javafmllanguage-1
 [ -f "$JMLLANG" ] || { echo "FAIL d3-live : javafmllanguage absent ($JMLLANG, re-run --installServer online)"; exit 1; }
 EVENTBUS="$LIB/net/minecraftforge/eventbus/6.0.5/eventbus-6.0.5.jar"
 [ -f "$EVENTBUS" ] || { echo "FAIL d3-live : eventbus absent ($EVENTBUS, re-run --installServer online)"; exit 1; }
-if [ ! -f "$D3_DIR/mcp_config-1.20.1-20230612.114412.zip" ]; then
-  if [ "${D3_OFFLINE:-}" = "1" ]; then
-    echo "FAIL d3-live : offline and MCP config absent ($D3_DIR/mcp_config-1.20.1-20230612.114412.zip)"
-    exit 1
-  fi
-  curl -sL -o "$D3_DIR/mcp_config-1.20.1-20230612.114412.zip" "$MCP_CONFIG_URL" \
-    || { echo "FAIL d3-live : MCP config download"; exit 1; }
-fi
-echo "$MCP_CONFIG_SHA1  $D3_DIR/mcp_config-1.20.1-20230612.114412.zip" | sha1sum -c - >/dev/null 2>&1 \
-  || { echo "FAIL d3-live : MCP config sha1 drift (want $MCP_CONFIG_SHA1)"; exit 1; }
-if [ ! -f "$D3_DIR/server-mappings.txt" ]; then
-  if [ "${D3_OFFLINE:-}" = "1" ]; then
-    echo "FAIL d3-live : offline and Mojang mappings absent ($D3_DIR/server-mappings.txt)"
-    exit 1
-  fi
-  curl -sL -o "$D3_DIR/server-mappings.txt" "$MOJMAPS_URL" \
-    || { echo "FAIL d3-live : Mojang mappings download"; exit 1; }
-fi
-echo "$MOJMAPS_SHA1  $D3_DIR/server-mappings.txt" | sha1sum -c - >/dev/null 2>&1 \
-  || { echo "FAIL d3-live : Mojang mappings sha1 drift (want $MOJMAPS_SHA1)"; exit 1; }
+live_fetch "$D3_DIR/mcp_config-1.20.1-20230612.114412.zip" "$MCP_CONFIG_URL" "$MCP_CONFIG_SHA1" "${D3_OFFLINE:-0}"
+live_fetch "$D3_DIR/server-mappings.txt" "$MOJMAPS_URL" "$MOJMAPS_SHA1" "${D3_OFFLINE:-0}"
 # Client mappings (one row needs them — see step 2): Mojang official
 # moj<->obf map for CLIENT classes, pinned by tools/autoplay/
 # client-mappings-pin.txt (same repo, referenced here — never copied, hub
@@ -283,423 +261,13 @@ echo "ok d3-live : server provisioned (pins verified)"
 #    on both hops plus the live client run lock it, never a bare recall).
 #    Production classes stay Mojmap (installer MERGE_MAPPING keeps classes
 #    official) — only members reobfuscate, so no class lines are needed.
-python3 - "$D3_DIR/mcp_config-1.20.1-20230612.114412.zip" "$D3_DIR/server-mappings.txt" "$MC_INNER" "$J17/javap" "$D3_DIR/srg-narrow.srg" "$D3_DIR/client-mappings.txt" "$MCCLIENT" <<'EOF'
-import re, subprocess, sys, zipfile
-mcpcfg, mojmaps, server, javap, outpath, climaps, client = sys.argv[1:8]
-tsrg = zipfile.ZipFile(mcpcfg).read("config/joined.tsrg").decode("utf-8")
-# moj class (dots) -> obf class; moj class -> [(kind, rettype, name, args, obf)]
-moj2obf, members = {}, {}
-cur = None
-for raw in open(mojmaps):
-    if not raw.strip() or raw.startswith("#"):
-        continue
-    if raw[0] in (" ", "\t"):
-        m = re.match(r"^\s+(?:\d+:\d+:)?(\S+) ([\w$<>]+)(\(.*\))? -> ([\w$<>]+)$", raw.rstrip())
-        assert m, "E_SRG_DERIVE:unparsed mappings line <%s>" % raw.rstrip()
-        rettype, name, args, obf = m.groups()
-        kind = "method" if args is not None else "field"
-        members.setdefault(cur, []).append((kind, rettype, name, args or "", obf))
-    else:
-        if "package-info -> " in raw:
-            continue  # ProGuard package marker, never a WANT owner
-        m = re.match(r"^([\w.$]+) -> ([\w$.]+):$", raw.rstrip())
-        assert m, "E_SRG_DERIVE:unparsed mappings class <%s>" % raw.rstrip()
-        cur = m.group(1)
-        moj2obf[cur] = m.group(2)
-        members.setdefault(cur, [])
-# Client map (same ProGuard shape): client-only classes live here alone
-# (server.txt never names them). Separate tables — client.txt also
-# covers shared classes, and merging would double members the
-# exactly-one asserts must see once.
-cmoj2obf, cmembers = {}, {}
-cur = None
-for raw in open(climaps):
-    if not raw.strip() or raw.startswith("#"):
-        continue
-    if raw[0] in (" ", "\t"):
-        m = re.match(r"^\s+(?:\d+:\d+:)?(\S+) ([\w$<>]+)(\(.*\))? -> ([\w$<>]+)$", raw.rstrip())
-        assert m, "E_SRG_DERIVE:unparsed client mappings line <%s>" % raw.rstrip()
-        rettype, name, args, obf = m.groups()
-        kind = "method" if args is not None else "field"
-        cmembers.setdefault(cur, []).append((kind, rettype, name, args or "", obf))
-    else:
-        if "package-info -> " in raw:
-            continue  # ProGuard package marker, never a WANT owner
-        m = re.match(r"^([\w.$]+) -> ([\w$.]+):$", raw.rstrip())
-        assert m, "E_SRG_DERIVE:unparsed client mappings class <%s>" % raw.rstrip()
-        cur = m.group(1)
-        cmoj2obf[cur] = m.group(2)
-        cmembers.setdefault(cur, [])
-
-def to_internal(moj_dots):
-    return moj_dots.replace(".", "/")
-
-def obf_desc(moj_desc):
-    return re.sub(r"L([^;]+);",
-                  lambda m: "L" + to_internal(moj2obf.get(m.group(1).replace("/", "."), m.group(1))) + ";",
-                  moj_desc)
-
-def cobf_desc(moj_desc):
-    # Client-row resolver: client.txt first (client-only classes live
-    # there alone), server.txt fallback (shared classes map identically
-    # in both Mojang files — same obf namespace, never two answers).
-    def obf(moj_slashes):
-        moj_dots = moj_slashes.replace("/", ".")
-        if moj_dots in cmoj2obf:
-            return to_internal(cmoj2obf[moj_dots])
-        return to_internal(moj2obf.get(moj_dots, moj_slashes))
-    return re.sub(r"L([^;]+);", lambda m: "L" + obf(m.group(1)) + ";",
-                  moj_desc)
-
-def srg_desc(obf_d, obf2srg):
-    return re.sub(r"L([^;]+);",
-                  lambda m: "L" + obf2srg.get(m.group(1), m.group(1)) + ";",
-                  obf_d)
-
-# TSRG v2: class lines `obf srg [id]`; member lines (one tab) `obf [desc] srg
-# [id]` — methods carry a descriptor, fields do not; a `static` line (two
-# tabs) follows the member it describes, param lines are ignored.
-obf2srg, classes = {}, {}
-cur = None
-for raw in tsrg.splitlines():
-    if not raw.strip() or raw.startswith("tsrg2"):
-        continue
-    if raw[0] in (" ", "\t"):
-        s = raw.strip()
-        if s == "static":
-            classes[cur][-1]["static"] = True
-            continue
-        if re.match(r"^\d+ ", s):
-            continue
-        parts = s.split()
-        if "(" in s:
-            classes[cur].append({"obf": parts[0], "desc": parts[1],
-                                 "srg": parts[2], "static": False})
-        else:
-            classes[cur].append({"obf": parts[0], "desc": None,
-                                 "srg": parts[1], "static": False})
-    else:
-        obf, srg = raw.split()[:2]
-        obf2srg[obf] = srg
-        cur = obf
-        classes.setdefault(cur, [])
-
-def javap_flags(cls, jar):
-    # -> {(name, descriptor-or-F:type): is_static} from the obf jar
-    # holding the class (inner server jar, or the pinned vanilla client
-    # jar for client-only owners — chosen per row below, never defaulted).
-    out = subprocess.check_output([javap, "-p", "-s", "-cp", jar, cls]).decode()
-    res, name, static = {}, None, False
-    for l in out.splitlines():
-        s = l.strip()
-        if s.startswith("descriptor:"):
-            res[(name, s.split(None, 1)[1])] = static
-        elif s and not s.startswith("Compiled"):
-            m = re.match(r".*\s([\w$<>]+)\(", s)
-            if m:
-                static = bool(re.search(r"\bstatic\b", s.split("(")[0]))
-                name = m.group(1)
-            elif "(" not in s and s.endswith(";") and "{" not in s:
-                # Field type class carries `?` for javap-printed wildcards
-                # (a generic Function field in BlockBehaviour$Properties —
-                # measured, not assumed: the pre-fix class failed loud
-                # here, same family as the 1165 wildcard finding).
-                m2 = re.match(r"(?:(.*)\s)?([\w.$\[\]<>, ?]+?)\s+([\w$]+);", s)
-                assert m2, "E_SRG_DERIVE:unparsed javap line <%s> in <%s>" % (s, cls)
-                static = bool(re.search(r"\bstatic\b", m2.group(1) or ""))
-                name = m2.group(3)
-                res[(name, "F:" + re.sub(r"<.*>", "", m2.group(2)))] = static
-    return res
-
-WANT_METHODS = [
-    ("net/minecraft/world/level/Level", "setBlock",
-     "(Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;I)Z", False),
-    ("net/minecraft/world/level/Level", "dimension",
-     "()Lnet/minecraft/resources/ResourceKey;", False),
-    ("net/minecraft/world/level/block/Block", "defaultBlockState",
-     "()Lnet/minecraft/world/level/block/state/BlockState;", False),
-    ("net/minecraft/world/level/block/state/BlockBehaviour$Properties", "of",
-     "()Lnet/minecraft/world/level/block/state/BlockBehaviour$Properties;", True),
-    ("net/minecraft/world/level/block/state/BlockBehaviour$Properties", "strength",
-     "(F)Lnet/minecraft/world/level/block/state/BlockBehaviour$Properties;", False),
-    ("net/minecraft/server/level/ServerLevel", "addFreshEntity",
-     "(Lnet/minecraft/world/entity/Entity;)Z", False),
-    ("net/minecraft/world/entity/Entity", "level",
-     "()Lnet/minecraft/world/level/Level;", False),
-    ("net/minecraft/world/entity/Entity", "getX",
-     "()D", False),
-    ("net/minecraft/world/entity/Entity", "getY",
-     "()D", False),
-    ("net/minecraft/world/entity/Entity", "getZ",
-     "()D", False),
-    ("net/minecraft/world/level/Level", "isClientSide",
-     "()Z", False),
-    ("net/minecraft/core/Vec3i", "getX",
-     "()I", False),
-    ("net/minecraft/core/Vec3i", "getY",
-     "()I", False),
-    ("net/minecraft/core/Vec3i", "getZ",
-     "()I", False),
-    ("net/minecraft/world/level/block/state/BlockBehaviour$BlockStateBase", "getBlock",
-     "()Lnet/minecraft/world/level/block/Block;", False),
-    ("net/minecraft/world/entity/Entity", "getId",
-     "()I", False),
-    ("net/minecraft/world/entity/Entity", "isAlive",
-     "()Z", False),
-    ("net/minecraft/world/entity/Entity", "moveTo",
-     "(DDDFF)V", False),
-    ("net/minecraft/world/entity/LivingEntity", "getAttribute",
-     "(Lnet/minecraft/world/entity/ai/attributes/Attribute;)Lnet/minecraft/world/entity/ai/attributes/AttributeInstance;", False),
-    ("net/minecraft/world/entity/LivingEntity", "setHealth",
-     "(F)V", False),
-    ("net/minecraft/world/entity/LivingEntity", "getMaxHealth",
-     "()F", False),
-    ("net/minecraft/world/entity/ai/attributes/AttributeInstance", "setBaseValue",
-     "(D)V", False),
-    ("net/minecraft/world/level/EntityGetter", "getEntitiesOfClass",
-     "(Ljava/lang/Class;Lnet/minecraft/world/phys/AABB;)Ljava/util/List;", False),
-    ("net/minecraft/world/entity/EntityType$Builder", "of",
-     "(Lnet/minecraft/world/entity/EntityType$EntityFactory;Lnet/minecraft/world/entity/MobCategory;)Lnet/minecraft/world/entity/EntityType$Builder;", True),
-    ("net/minecraft/world/entity/EntityType$Builder", "sized",
-     "(FF)Lnet/minecraft/world/entity/EntityType$Builder;", False),
-    ("net/minecraft/world/entity/EntityType$Builder", "clientTrackingRange",
-     "(I)Lnet/minecraft/world/entity/EntityType$Builder;", False),
-    ("net/minecraft/world/entity/EntityType$Builder", "build",
-     "(Ljava/lang/String;)Lnet/minecraft/world/entity/EntityType;", False),
-    ("net/minecraft/world/entity/animal/Pig", "createAttributes",
-     "()Lnet/minecraft/world/entity/ai/attributes/AttributeSupplier$Builder;", True),
-    ("net/minecraft/world/entity/ai/attributes/AttributeSupplier$Builder", "build",
-     "()Lnet/minecraft/world/entity/ai/attributes/AttributeSupplier;", False),
-    ("net/minecraft/world/entity/EntityType$EntityFactory", "create",
-     "(Lnet/minecraft/world/entity/EntityType;Lnet/minecraft/world/level/Level;)Lnet/minecraft/world/entity/Entity;", False),
-    # Item registration tranche (hub decisions/ITEM_REGISTRATION.md):
-    ("net/minecraft/world/item/Item$Properties", "stacksTo",
-     "(I)Lnet/minecraft/world/item/Item$Properties;", False),
-    # Renderer tranche (hub decisions/MATOU_MODEL.md +
-    # GL_INSTANCING_ADAPTER.md): frame interpolation rides the current
-    # getYRot/getXRot (javap-measured on the notch server jar like every
-    # row above — the 1.12 field shape does not port).
-    ("net/minecraft/world/entity/Entity", "getYRot",
-     "()F", False),
-    ("net/minecraft/world/entity/Entity", "getXRot",
-     "()F", False),
-]
-# Vanilla SAMs our lambdas/method-refs target (see the Reobf note):
-# same triple-lock shape as WANT_METHODS, except the javap leg — client
-# classes never ship in the provisioned server jars, so no javap can
-# disambiguate them here (the client pipeline owns that leg through the
-# autoplay derive). The exact-one asserts on the moj hop (client.txt)
-# and the obf hop (joined.tsrg) plus the live client run lock the row —
-# a renamed member breaks both asserts loudly, never silently.
-WANT_SAM_CLIENT = [
-    ("net/minecraft/client/renderer/entity/EntityRendererProvider", "create",
-     "(Lnet/minecraft/client/renderer/entity/EntityRendererProvider$Context;)Lnet/minecraft/client/renderer/entity/EntityRenderer;", False),
-]
-WANT_FIELDS = [
-    ("net/minecraft/world/level/Level", "OVERWORLD",
-     "Lnet/minecraft/resources/ResourceKey;", True),
-    ("net/minecraft/world/item/Items", "DIAMOND",
-     "Lnet/minecraft/world/item/Item;", True),
-    ("net/minecraft/world/entity/EntityType", "PIG",
-     "Lnet/minecraft/world/entity/EntityType;", True),
-    ("net/minecraft/world/entity/ai/attributes/Attributes", "MAX_HEALTH",
-     "Lnet/minecraft/world/entity/ai/attributes/Attribute;", True),
-    # Renderer tranche (hub decisions/MATOU_MODEL.md +
-    # GL_INSTANCING_ADAPTER.md): frame interpolation rides the
-    # xo/yo/zo + yRotO/xRotO olds (public fields — the 1.12 prevPos
-    # shape does not port; first primitive rows, see field_type_match).
-    ("net/minecraft/world/entity/Entity", "xo",
-     "D", False),
-    ("net/minecraft/world/entity/Entity", "yo",
-     "D", False),
-    ("net/minecraft/world/entity/Entity", "zo",
-     "D", False),
-    ("net/minecraft/world/entity/Entity", "yRotO",
-     "F", False),
-    ("net/minecraft/world/entity/Entity", "xRotO",
-     "F", False),
-]
-# Renderer client-only rows (hub decisions/MATOU_MODEL.md +
-# GL_INSTANCING_ADAPTER.md): the view entity rides
-# Minecraft.getCameraEntity, the world behind Minecraft.level
-# (ClientLevel-typed), and both shader matrices ride
-# PoseStack.last/pose (Mojang class, SRG members at runtime). Client.txt
-# hop + client-jar javap leg (same triple lock as the server rows —
-# client classes never ship in the server jars, never defaulted).
-WANT_METHODS_CLIENT = [
-    ("net/minecraft/client/Minecraft", "getInstance",
-     "()Lnet/minecraft/client/Minecraft;", True),
-    ("net/minecraft/client/Minecraft", "getCameraEntity",
-     "()Lnet/minecraft/world/entity/Entity;", False),
-    ("com/mojang/blaze3d/vertex/PoseStack", "last",
-     "()Lcom/mojang/blaze3d/vertex/PoseStack$Pose;", False),
-    ("com/mojang/blaze3d/vertex/PoseStack$Pose", "pose",
-     "()Lorg/joml/Matrix4f;", False),
-]
-WANT_FIELDS_CLIENT = [
-    ("net/minecraft/client/Minecraft", "level",
-     "Lnet/minecraft/client/multiplayer/ClientLevel;", False),
-]
-
-PRIM = {"B": "byte", "C": "char", "D": "double", "F": "float",
-          "I": "int", "J": "long", "S": "short", "Z": "boolean", "V": "void"}
-
-def desc_args(desc):
-    # Descriptor args "(L...;I)Z" -> moj-dot list ["net.minecraft...", "int"].
-    body = desc[desc.index("(") + 1:desc.index(")")]
-    out, i = [], 0
-    while i < len(body):
-        c = body[i]
-        if c == "L":
-            j = body.index(";", i)
-            out.append(body[i + 1:j].replace("/", "."))
-            i = j + 1
-        elif c == "[":
-            j = i
-            while body[j] == "[":
-                j += 1
-            if body[j] == "L":
-                k = body.index(";", j)
-                out.append(body[j + 1:k].replace("/", ".") + "[]" * (j - i))
-                i = k + 1
-            else:
-                out.append(PRIM[body[j]] + "[]" * (j - i))
-                i = j + 1
-        else:
-            out.append(PRIM[c])
-            i += 1
-    return out
-
-def norm_args(a):
-    a = a.strip()
-    assert a.startswith("(") and a.endswith(")"), "E_SRG_DERIVE:bad args <%s>" % a
-    return [x for x in a[1:-1].split(",") if x]
-
-MOJ_PRIM = {"B": "byte", "C": "char", "D": "double", "F": "float",
-            "I": "int", "J": "long", "S": "short", "Z": "boolean"}
-
-def field_type_match(rettype, ftype):
-    # Mappings field type vs the WANT descriptor: object types compare
-    # slash-normalized, primitives by Java name (the renderer tranche's
-    # xo/yo/zo + yRotO/xRotO are the first primitive rows — the old
-    # object-only comparison matched nothing for them). The strip is
-    # [1:-1] only: a blanket .replace("L","") would eat inner capitals
-    # (caught by ClientLevel here — no prior type contained one, so the
-    # old shape never fired).
-    if len(ftype) == 1:
-        return rettype == MOJ_PRIM[ftype]
-    return rettype.replace(".", "/") == ftype[1:-1]
-
-def javap_ftype(ftype, obf_fn):
-    # javap prints "F:double", never "F:D" — same primitive split (the
-    # object leg maps through the given obf descriptor function: server
-    # rows through obf_desc, client rows through cobf_desc).
-    if len(ftype) == 1:
-        return MOJ_PRIM[ftype]
-    return obf_fn(ftype)[1:-1]
-
-lines = []
-for owner, mcp, desc, want_static in WANT_METHODS:
-    moj_cls = owner.replace("/", ".")
-    obf_owner = moj2obf[moj_cls]
-    want_args = desc_args(desc)
-    cands = [(k, r, n, a, o) for (k, r, n, a, o) in members[moj_cls]
-             if k == "method" and n == mcp and norm_args(a) == want_args]
-    assert len(cands) == 1, "E_SRG_DERIVE:mojmap member <%s %s%s> %s" % (owner, mcp, desc, cands)
-    obf_name = cands[0][4]
-    od = obf_desc(desc)
-    tm = [m for m in classes[obf_owner]
-          if m["desc"] == od and m["obf"] == obf_name]
-    assert len(tm) == 1, "E_SRG_DERIVE:no tsrg member <%s %s %s>" % (obf_owner, obf_name, od)
-    flags = javap_flags(obf_owner, server)
-    assert flags.get((obf_name, od)) == want_static, \
-        "E_SRG_DERIVE:javap mismatch <%s %s> %s" % (obf_owner, obf_name, flags.get((obf_name, od)))
-    sd = srg_desc(od, obf2srg)
-    lines.append("MD: %s/%s %s %s/%s %s" % (obf2srg[obf_owner], tm[0]["srg"], sd, owner, mcp, desc))
-for owner, mcp, ftype, want_static in WANT_FIELDS:
-    moj_cls = owner.replace("/", ".")
-    obf_owner = moj2obf[moj_cls]
-    cands = [(k, r, n, a, o) for (k, r, n, a, o) in members[moj_cls]
-             if k == "field" and n == mcp and field_type_match(r, ftype)]
-    assert len(cands) == 1, "E_SRG_DERIVE:mojmap field <%s %s> %s" % (owner, mcp, cands)
-    obf_name = cands[0][4]
-    tm = [m for m in classes[obf_owner]
-          if m["desc"] is None and m["obf"] == obf_name]
-    assert len(tm) == 1, "E_SRG_DERIVE:no tsrg field <%s %s>" % (obf_owner, obf_name)
-    flags = javap_flags(obf_owner, server)
-    ftype_obf = javap_ftype(ftype, obf_desc)
-    assert flags.get((obf_name, "F:" + ftype_obf)) == want_static, \
-        "E_SRG_DERIVE:javap mismatch field <%s %s>" % (obf_owner, obf_name)
-    lines.append("FD: %s/%s %s/%s" % (obf2srg[obf_owner], tm[0]["srg"], owner, mcp))
-for owner, mcp, desc, want_static in WANT_METHODS_CLIENT:
-    moj_cls = owner.replace("/", ".")
-    assert moj_cls in cmoj2obf, "E_SRG_DERIVE:no client class <%s>" % owner
-    obf_owner = cmoj2obf[moj_cls]
-    want_args = desc_args(desc)
-    cands = [(k, r, n, a, o) for (k, r, n, a, o) in cmembers[moj_cls]
-             if k == "method" and n == mcp and norm_args(a) == want_args]
-    assert len(cands) == 1, "E_SRG_DERIVE:client mojmap member <%s %s%s> %s" % (owner, mcp, desc, cands)
-    obf_name = cands[0][4]
-    od = cobf_desc(desc)
-    tm = [m for m in classes[obf_owner]
-          if m["desc"] == od and m["obf"] == obf_name]
-    assert len(tm) == 1, "E_SRG_DERIVE:no tsrg member <%s %s %s>" % (obf_owner, obf_name, od)
-    flags = javap_flags(obf_owner, client)
-    assert flags.get((obf_name, od)) == want_static, \
-        "E_SRG_DERIVE:client javap mismatch <%s %s> %s" % (obf_owner, obf_name, flags.get((obf_name, od)))
-    sd = srg_desc(od, obf2srg)
-    lines.append("MD: %s/%s %s %s/%s %s" % (obf2srg[obf_owner], tm[0]["srg"], sd, owner, mcp, desc))
-for owner, mcp, ftype, want_static in WANT_FIELDS_CLIENT:
-    moj_cls = owner.replace("/", ".")
-    assert moj_cls in cmoj2obf, "E_SRG_DERIVE:no client class <%s>" % owner
-    obf_owner = cmoj2obf[moj_cls]
-    cands = [(k, r, n, a, o) for (k, r, n, a, o) in cmembers[moj_cls]
-             if k == "field" and n == mcp and field_type_match(r, ftype)]
-    assert len(cands) == 1, "E_SRG_DERIVE:client mojmap field <%s %s> %s" % (owner, mcp, cands)
-    obf_name = cands[0][4]
-    tm = [m for m in classes[obf_owner]
-          if m["desc"] is None and m["obf"] == obf_name]
-    assert len(tm) == 1, "E_SRG_DERIVE:no tsrg field <%s %s>" % (obf_owner, obf_name)
-    flags = javap_flags(obf_owner, client)
-    ftype_obf = javap_ftype(ftype, cobf_desc)
-    assert flags.get((obf_name, "F:" + ftype_obf)) == want_static, \
-        "E_SRG_DERIVE:client javap mismatch field <%s %s>" % (obf_owner, obf_name)
-    lines.append("FD: %s/%s %s/%s" % (obf2srg[obf_owner], tm[0]["srg"], owner, mcp))
-for owner, mcp, desc, want_static in WANT_SAM_CLIENT:
-    moj_cls = owner.replace("/", ".")
-    assert moj_cls in cmoj2obf, "E_SRG_DERIVE:no client class <%s>" % owner
-    obf_owner = cmoj2obf[moj_cls]
-    want_args = desc_args(desc)
-    cands = [(k, r, n, a, o) for (k, r, n, a, o) in cmembers[moj_cls]
-             if k == "method" and n == mcp and norm_args(a) == want_args]
-    assert len(cands) == 1, "E_SRG_DERIVE:client mojmap member <%s %s%s> %s" % (owner, mcp, desc, cands)
-    obf_name = cands[0][4]
-    od = cobf_desc(desc)
-    tm = [m for m in classes[obf_owner]
-          if m["desc"] == od and m["obf"] == obf_name]
-    assert len(tm) == 1, "E_SRG_DERIVE:no tsrg member <%s %s %s>" % (obf_owner, obf_name, od)
-    # No javap leg here (client classes never ship in the provisioned
-    # server jars — see the WANT_SAM_CLIENT note): the two exact-one
-    # asserts above plus the live client run own this row. want_static
-    # is documentary (an interface SAM is never static) and unchecked.
-    sd = srg_desc(od, obf2srg)
-    lines.append("MD: %s/%s %s %s/%s %s" % (obf2srg[obf_owner], tm[0]["srg"], sd, owner, mcp, desc))
-assert len(lines) == 48, "E_SRG_DERIVE:want 48 lines, got %d" % len(lines)
-open(outpath, "w").write("\n".join(lines) + "\n")
-print("ok d3-live : narrow SRG derived (%d lines)" % len(lines))
-EOF
+# Mechanics live in hub/tools/live-derive.sh (era 1.20), rows in
+# tools/live/want.tsv — same 48 lines, byte-identical output.
 SRG_NARROW="$D3_DIR/srg-narrow.srg"
+live_derive_mojmaps "$D3_DIR/mcp_config-1.20.1-20230612.114412.zip" "$D3_DIR/server-mappings.txt" "$MC_INNER" "$J17/javap" "$SRG_NARROW" "$D3_DIR/client-mappings.txt" "$MCCLIENT" "tools/live/want.tsv"
 # 2b. Pin every derived line: a derivation the SRG does not confirm is a loud
 #     failure, never a silent default. Production classes stay Mojmap — only
 #     these 48 members reobfuscate, exactly.
-pin_method() {
-  grep -q "^MD: [^ ]* [^ ]* $1 $2\$" "$SRG_NARROW" \
-    || { echo "FAIL d3-live : stub member unpinned <$1 $2>"; exit 1; }
-}
-pin_field() {
-  grep -q "^FD: [^ ]* $1\$" "$SRG_NARROW" \
-    || { echo "FAIL d3-live : stub field unpinned <$1>"; exit 1; }
-}
 pin_method "net/minecraft/world/level/Level/setBlock" "(Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;I)Z"
 pin_method "net/minecraft/world/level/Level/dimension" "()Lnet/minecraft/resources/ResourceKey;"
 pin_method "net/minecraft/world/level/block/Block/defaultBlockState" "()Lnet/minecraft/world/level/block/state/BlockState;"
@@ -766,10 +334,6 @@ echo "ok d3-live : stubs pinned to derived SRG"
 #     universal, which is why forge/ compiles against stubs, not it.)
 #     Vanilla members are pinned against the installer-renamed game jar:
 #     production classes are Mojmap, members SRG.
-pin_uni() {
-  "$J17/javap" -p -cp "$UNI" "$1" 2>/dev/null | grep -q "$2" \
-    || { echo "FAIL d3-live : universal pin unmet <$1 :: $2>"; exit 1; }
-}
 pin_uni 'net.minecraftforge.event.TickEvent$LevelTickEvent' 'level'
 pin_uni 'net.minecraftforge.event.TickEvent$ClientTickEvent' 'ClientTickEvent('
 pin_uni 'net.minecraftforge.event.TickEvent$ServerTickEvent' 'ServerTickEvent('
@@ -872,37 +436,6 @@ grep -q "version=\"$VERSION\"" "$BLD/modstoml/META-INF/mods.toml" \
 EPOCH="${SOURCE_DATE_EPOCH:-$(git log -1 --format=%ct)}"
 printf 'Manifest-Version: 1.0\nImplementation-Version: %s\n' "$VERSION" > "$BLD/MANIFEST.MF"
 find "$BLD/spi" "$BLD/ex1" "$BLD/mini" "$BLD/forge" "$BLD/modstoml" "$BLD/MANIFEST.MF" -exec touch -h -d "@$EPOCH" {} +
-# mkjar: sorted entries, pinned mtimes, VERSION manifest. File lists stay
-# explicit because jar -C . walks in readdir order (not reproducible).
-# normjar then clamps every zip entry timestamp: the jar tool stamps
-# META-INF entries with the wall clock (verified by diff), and Reobf does
-# the same for its output. python3 is already a hard dependency (anvil).
-# Scope: same commit + same toolchain == same bytes (zlib/JDK may vary
-# across machines; use tools/live/Dockerfile to pin the toolchain).
-normjar() {
-  python3 - "$1" "$EPOCH" <<'EOF'
-import sys, zipfile, datetime
-path, epoch = sys.argv[1], int(sys.argv[2])
-dt = datetime.datetime.fromtimestamp(epoch, datetime.timezone.utc).timetuple()[:6]
-zin = zipfile.ZipFile(path)
-items = [(i, zin.read(i.filename)) for i in zin.infolist()]
-zin.close()
-zout = zipfile.ZipFile(path + ".norm", "w", zipfile.ZIP_DEFLATED)
-for info, data in items:
-    info.date_time = dt
-    info.create_system = 0
-    zout.writestr(info, data)
-zout.close()
-EOF
-  mv "$1.norm" "$1"
-}
-mkjar() {
-  out="$1"; stage="$2"
-  files=$(cd "$stage" && find . -type f | LC_ALL=C sort)
-  # Controlled tree, no spaces in class paths: word-splitting is intended.
-  (cd "$stage" && "$J17/jar" cfm "$out" "$BLD/MANIFEST.MF" $files)
-  normjar "$out"
-}
 mkjar "$BLD/jars/matou-spi.jar" "$BLD/spi"
 mkjar "$BLD/jars/matou-example1.jar" "$BLD/ex1"
 mkjar "$BLD/jars/matou-minimap.jar" "$BLD/mini"
@@ -1131,25 +664,13 @@ cp tools/live/my_beast.geo.json "$SERV/config/matoubridge/my_beast.geo.json"
 echo "eula=true" > "$SERV/eula.txt"
 printf 'online-mode=false\nlevel-type=minecraft:flat\ngamemode=1\ndifficulty=0\nmotd=D3 live proof\nmax-tick-time=-1\n' > "$SERV/server.properties"
 rm -rf "$SERV/world" "$SERV/logs"
-set +e
-(cd "$SERV" && timeout "$BOOT_SECS" sh run.sh nogui < /dev/null > boot-d3.log 2>&1)
-code=$?
-set -e
-[ "$code" -eq 124 ] || { echo "FAIL d3-live : server exited early (code $code, see $SERV/boot-d3.log)"; exit 1; }
-echo "ok d3-live : server ran ($BOOT_SECS s)"
+live_boot "$SERV" "$BOOT_SECS" "boot-d3.log" sh run.sh nogui
 
 # 6. Fail loudly on any runtime refusal or linkage error (stdout log plus
 #    the rolling server log — Forge splits output across both).
 LOGS="$SERV/boot-d3.log"
 [ -f "$SERV/logs/latest.log" ] && LOGS="$LOGS $SERV/logs/latest.log"
-if grep -a -q "NoSuchMethodError\|NoSuchFieldError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|E_LOOT\|E_SPAWN\|E_SPIKE\|E_MODEL\|Encountered an unexpected exception" $LOGS; then
-  echo "FAIL d3-live : runtime refusal (see $SERV/boot-d3.log)"
-  grep -a -m5 "NoSuchMethodError\|NoSuchFieldError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|E_LOOT\|E_SPAWN\|E_SPIKE\|E_MODEL\|Caused by" $LOGS
-  exit 1
-fi
-grep -a -q "matoubridge" $LOGS \
-  || { echo "FAIL d3-live : mod never loaded"; exit 1; }
-echo "ok d3-live : bind clean, ticks clean"
+live_verdict "NoSuchMethodError\|NoSuchFieldError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|E_LOOT\|E_SPAWN\|E_SPIKE\|E_MODEL\|Encountered an unexpected exception" "NoSuchMethodError\|NoSuchFieldError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|E_LOOT\|E_SPAWN\|E_SPIKE\|E_MODEL\|Caused by" $LOGS
 # Registration proof: the setup-time verify line carries the registry key
 # (1.20.1 has no numeric block ids — the anvil probe reads namespaced
 # names, and this line proves the custom name resolved through the
@@ -1173,63 +694,5 @@ echo "ok d3-live : my_gem registered ($(grep -a -o '\[MatouBridge\] registered-i
 "$J17/javac" --release 8 -nowarn -cp "$BLD/spi:$BLD/ex1" -d "$BLD" tools/live/CellUnion.java
 "$J17/java" -cp "$BLD:$BLD/spi:$BLD/ex1" CellUnion \
   "$SERV/config/matoubridge/packs.cfg" 4000 "$BLD/union.txt"
-: > "$BLD/world.txt"
-for spec in "r.0.0.mca 0 0" "r.0.0.mca 1 0" "r.0.0.mca 0 1" \
-    "r.0.0.mca 1 1" "r.0.-1.mca 0 -1" "r.0.-1.mca 1 -1"; do
-  set -- $spec
-  for y in 60 61 63 64 65; do
-    python3 tools/live/anvil.py "$SERV/world/region/$1" "$2" "$3" "$y" \
-      | awk -v cx="$2" -v cz="$3" -v y="$y" \
-        '{split($1, a, ","); print (cx*16+a[1])" "y" "(cz*16+a[2])" "$2}' \
-      >> "$BLD/world.txt"
-  done
-done
-python3 - "$BLD/union.txt" "$BLD/world.txt" "$SERV/config/matoubridge/packs.cfg" <<'EOF'
-import sys
-# Names resolve through packs.cfg itself (wire block plus every
-# block.<ref>=<name> alias value) — never hardcoded, never guessed. A
-# world name outside that set fails loudly (extend the wire explicitly).
-wire_y, wire_block, allowed = None, None, set()
-for line in open(sys.argv[3]):
-    line = line.strip()
-    if line and not line.startswith("#"):
-        toks = line.split()
-        wire_y, wire_block = int(toks[1]), toks[2]
-        allowed.add(wire_block)
-        for tok in toks[3:]:
-            if tok.startswith("block.") and "=" in tok:
-                allowed.add(tok.split("=", 1)[1])
-if wire_y is None:
-    print("FAIL d3-live : no wire in packs.cfg")
-    sys.exit(1)
-u = {}
-for line in open(sys.argv[1]):
-    cell = line.split()[0]
-    parts = cell.split(",")
-    if len(parts) == 3 and ":" in parts[2]:
-        z, bname = parts[2].split(":", 1)
-        pos = (int(parts[0]), int(parts[1]), int(z))
-    else:
-        x, z = cell.split(",")
-        pos, bname = (int(x), wire_y, int(z)), wire_block
-    if bname not in allowed:
-        print("FAIL d3-live : union block <%s> outside packs.cfg set (extend the wire, never guess)" % bname)
-        sys.exit(1)
-    u[pos] = bname
-rows = [l.split() for l in open(sys.argv[2])]
-w = {(int(x), int(y), int(z)): n for x, y, z, n in rows}
-if not w:
-    print("FAIL d3-live : world empty at y=60..61,63..65 (no tick applied?)")
-    sys.exit(1)
-if set(w.values()) - allowed:
-    print("FAIL d3-live : foreign blocks %s" % sorted(set(w.values()) - allowed))
-    sys.exit(1)
-bad = {p: (w[p], u.get(p)) for p in w if u.get(p) != w[p]}
-if bad:
-    print("FAIL d3-live : name mismatch at %s (want pure union names)" % sorted(bad.items())[:5])
-    sys.exit(1)
-if u.keys() - w.keys():
-    print("FAIL d3-live : pure cells missing from world (%d)" % len(u.keys() - w.keys()))
-    sys.exit(1)
-print("ok d3-live : world == pure union (%d cells, names %s)" % (len(w), sorted(set(w.values()))))
-EOF
+live_anvil_loop "$SERV" "$BLD"
+live_compare_names "$BLD/union.txt" "$BLD/world.txt" "$SERV/config/matoubridge/packs.cfg"
