@@ -262,12 +262,12 @@ echo "ok d3-live : server provisioned (pins verified)"
 #    Production classes stay Mojmap (installer MERGE_MAPPING keeps classes
 #    official) — only members reobfuscate, so no class lines are needed.
 # Mechanics live in hub/tools/live-derive.sh (era 1.20), rows in
-# tools/live/want.tsv — same 54 lines, byte-identical output.
+# tools/live/want.tsv — same 59 lines, byte-identical output.
 SRG_NARROW="$D3_DIR/srg-narrow.srg"
 live_derive_mojmaps "$D3_DIR/mcp_config-1.20.1-20230612.114412.zip" "$D3_DIR/server-mappings.txt" "$MC_INNER" "$J17/javap" "$SRG_NARROW" "$D3_DIR/client-mappings.txt" "$MCCLIENT" "tools/live/want.tsv"
 # 2b. Pin every derived line: a derivation the SRG does not confirm is a loud
 #     failure, never a silent default. Production classes stay Mojmap — only
-#     these 54 members reobfuscate, exactly.
+#     these 59 members reobfuscate, exactly.
 pin_method "net/minecraft/world/level/Level/setBlock" "(Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;I)Z"
 pin_method "net/minecraft/world/level/Level/dimension" "()Lnet/minecraft/resources/ResourceKey;"
 pin_method "net/minecraft/world/level/block/Block/defaultBlockState" "()Lnet/minecraft/world/level/block/state/BlockState;"
@@ -315,6 +315,18 @@ pin_method "net/minecraft/world/damagesource/DamageSource/getEntity" "()Lnet/min
 # Loop form (not one pin per line): eSLOC ceiling discipline, same pins
 # table-driven — every member name stays literal and grep-able.
 for f in x y z; do pin_field "net/minecraft/world/phys/Vec3/$f"; done
+# Second-beast tranche (hub decisions/VIRTUAL_HITBOXES.md, per-mob NBT
+# identity): Pig/addAdditionalSaveData + readAdditionalSaveData (the
+# persist pair the beast overrides, owner Pig — the public save/load
+# live one level up on Entity and their super calls would emit an
+# unmappable intermediate owner, so the beast overrides the
+# Pig-declared pair m_7380_/m_7378_ instead) and CompoundTag/contains +
+# getString + putString (the string-tag surface) — the narrow map grows
+# 54 -> 59 lines (53 server rows plus the 6 client rows below).
+# Loop forms (not one pin per line): eSLOC ceiling discipline, same pins
+# table-driven — every member name stays literal and grep-able.
+for m in addAdditionalSaveData readAdditionalSaveData; do pin_method "net/minecraft/world/entity/animal/Pig/$m" "(Lnet/minecraft/nbt/CompoundTag;)V"; done
+for spec in "contains (Ljava/lang/String;)Z" "getString (Ljava/lang/String;)Ljava/lang/String;" "putString (Ljava/lang/String;Ljava/lang/String;)V"; do pin_method "net/minecraft/nbt/CompoundTag/${spec%% *}" "${spec#* }"; done
 pin_field "net/minecraft/world/entity/Entity/xo"
 pin_field "net/minecraft/world/entity/Entity/yo"
 pin_field "net/minecraft/world/entity/Entity/zo"
@@ -336,8 +348,8 @@ pin_method "com/mojang/blaze3d/vertex/PoseStack\$Pose/pose" "()Lorg/joml/Matrix4
 pin_field "net/minecraft/world/item/Items/DIAMOND"
 pin_field "net/minecraft/world/entity/EntityType/PIG"
 pin_field "net/minecraft/world/entity/ai/attributes/Attributes/MAX_HEALTH"
-[ "$(grep -c . "$SRG_NARROW")" = "54" ] \
-  || { echo "FAIL d3-live : narrow map drift (want 54 lines)"; exit 1; }
+[ "$(grep -c . "$SRG_NARROW")" = "59" ] \
+  || { echo "FAIL d3-live : narrow map drift (want 59 lines)"; exit 1; }
 echo "ok d3-live : stubs pinned to derived SRG"
 
 # 2c. Pin every stubbed member against the provisioned jars. Forge classes
@@ -585,7 +597,7 @@ echo "ok d3-live : narrow map covers forge refs"
 #    equivalent: production vanilla declares SRG member names, so
 #    un-reobfed jars die with NoSuchMethodError — found live in B3, never
 #    again silently). Classes stay Mojmap (production classes are Mojmap),
-#    so only the 48 narrow-map members move; Forge refs pass through
+#    so only the 59 narrow-map members move; Forge refs pass through
 #    untouched (never obfuscated).
 "$J17/javac" --release 8 -nowarn -cp "$ASM:$ASM_COMMONS" -d "$BLD" tools/live/Reobf.java
 "$J17/java" -cp "$BLD:$ASM:$ASM_COMMONS" Reobf "$SRG_NARROW" "$BLD/jars/matoubridge.jar" "$BLD/jars/matoubridge-reobf.jar"

@@ -135,9 +135,10 @@ import net.minecraftforge.registries.ForgeRegistries;
  * beast past SPAWN_KILL_TICK with a simulated {@code LivingDropsEvent}
  * post (loot honesty standard -- the kill pays through the loot table,
  * proving the spawn-to-loot chain), then polls the diamond carrier at
- * the kill spot. The first living beast's max health is polled once
- * against SPAWN_HP (hp tranche -- the bridge applies the content hp per
- * landing; a diverged read-back fails loudly here too). Custom-entity
+ * the kill spot. Each mob's max health is polled once against its own
+ * spec (SPAWN_HP_BEAST / SPAWN_HP_BRUTE, hp tranche -- the bridge
+ * applies the content hp per landing; a diverged read-back fails loudly
+ * here too). Custom-entity
  * scope: the census IS the registered beast, so a combined LOOT=1 +
  * SPAWN=1 run counts the loot victim briefly -- the proofs run one flag
  * at a time. A missing beast, a breached cap, or a missing carrier fails
@@ -179,35 +180,41 @@ public class AutoplayMod {
     static final int LOOT_BEAST_DELAY = 5;
     static final int LOOT_TIMEOUT = 600;
     static final boolean SPAWN = "1".equals(System.getenv("SPAWN"));
-    /** Mirrors the effective cap (content {@code owned.matou mob my_beast
-     * cap} default, operator {@code spawn.cap} wins -- transported by the
-     * bridge spawn wire): the companion counts beasts, the effective
-     * policy owns the bound -- a drift here fails the proof loudly
-     * instead of asserting a stale cap silently. Override proofs set
-     * {@code SPAWN_CAP} to the packs.cfg override (both sides name the
-     * same bound, or the breach check is blind).
+    /** Mirrors the effective cap (content {@code owned.matou} per-mob
+     * cap default, operator {@code spawn.cap} wins uniformly per mob --
+     * transported by the bridge spawn wire): the companion counts beasts,
+     * the effective policy owns the bound -- a drift here fails the proof
+     * loudly instead of asserting a stale cap silently. Override proofs
+     * set {@code SPAWN_CAP} to the packs.cfg override times the sealed
+     * mob count (both sides name the same bound, or the breach check is
+     * blind). Two-mob content (my_beast cap 4 + my_brute cap 4) seals 8
+     * total, so the default is 8 — never a quiet single-mob pick.
      */
     static final int SPAWN_CAP = spawnCapOfEnv();
-    /** Mirrors the content hp ({@code owned.matou mob my_beast hp} via
-     * {@code MatouBridgeMod} spawn wire): the companion polls the landed
-     * max health, the bridge owns the value -- a drift here fails the
-     * proof loudly instead of asserting a stale hp silently. */
-    static final float SPAWN_HP = 20.0f;
+    /** Mirrors the content hp per mob ({@code owned.matou mob my_beast hp
+     * 20 + mob my_brute hp 30} via {@code MatouBridgeMod} spawn wire):
+     * the companion polls each mob's landed max health, the bridge owns
+     * the values — a drift here fails the proof loudly instead of
+     * asserting a stale hp silently. */
+    static final float SPAWN_HP_BEAST = 20.0f;
+    static final float SPAWN_HP_BRUTE = 30.0f;
     static final int SPAWN_KILL_TICK = 1000;
     static final int SPAWN_TIMEOUT = 600;
     /** Combat proof (DEV ONLY, rides a SPAWN=1 run): at COMBAT_TICK the
      * companion teleports the joined player beside the first living
-     * bridge beast, aims at the head bone and strikes through the
-     * genuine vanilla attack path (hub decisions/VIRTUAL_HITBOXES.md,
-     * server weakspot hook) — then polls the wound. The bridge hook
-     * refines that hurt to head x2, so a bare-hand 1.0 lands exactly
-     * 2.0 (crit excluded: the teleported player stands — a crit would
-     * fail the exact assert loudly, never pass as a weakspot). Without
-     * SPAWN=1 nothing runs (COMBAT=1 alone fails loudly — no beasts to
-     * strike); without COMBAT=1 the run is byte-for-byte the proven
-     * spawn run. */
+     * my_beast, aims at the head bone and strikes through the genuine
+     * vanilla attack path (hub decisions/VIRTUAL_HITBOXES.md, server
+     * weakspot hook) — then polls the wound; at COMBAT_TICK_BRUTE it
+     * repeats beside the first living my_brute. The bridge hook refines
+     * each hurt per mob (beast head x2, brute head x3), so a bare-hand
+     * 1.0 lands exactly 2.0 then exactly 3.0 (crit excluded: the
+     * teleported player stands — a crit would fail the exact assert
+     * loudly, never pass as a weakspot). Without SPAWN=1 nothing runs
+     * (COMBAT=1 alone fails loudly — no beasts to strike); without
+     * COMBAT=1 the run is byte-for-byte the proven spawn run. */
     static final boolean COMBAT = "1".equals(System.getenv("COMBAT"));
     static final int COMBAT_TICK = 500;
+    static final int COMBAT_TICK_BRUTE = 600;
     static final int COMBAT_TIMEOUT = 200;
     /** Operator beast shape (same file the bridge bakes — hub
      * decisions/MATOU_MODEL.md): the companion parses it pure for the
@@ -233,8 +240,11 @@ public class AutoplayMod {
     volatile int oreDropTick = -1;
     volatile int beastDropTick = -1;
     volatile boolean beastSeen = false;
-    volatile boolean hpSeen = false;
+    volatile boolean hpSeenBeast = false;
+    volatile boolean hpSeenBrute = false;
     volatile int maxBeasts = 0;
+    volatile int maxBeast = 0;
+    volatile int maxBrute = 0;
     volatile int firstBeastTick = -1;
     volatile boolean beastKilled = false;
     volatile int killTick = -1;
@@ -244,12 +254,17 @@ public class AutoplayMod {
     volatile boolean spawnCarrierDropped = false;
     volatile boolean spawnFailed = false;
     volatile int spawnCarrierTick = -1;
-    volatile boolean combatStruck = false;
-    volatile boolean combatResolved = false;
+    volatile boolean combatStruckBeast = false;
+    volatile boolean combatResolvedBeast = false;
+    volatile boolean combatStruckBrute = false;
+    volatile boolean combatResolvedBrute = false;
     volatile boolean combatFailed = false;
-    volatile int combatTick = -1;
-    volatile float combatHpBefore = -1.0f;
-    volatile MatouEntity combatVictim = null;
+    volatile int combatTickBeast = -1;
+    volatile int combatTickBrute = -1;
+    volatile float combatHpBeforeBeast = -1.0f;
+    volatile float combatHpBeforeBrute = -1.0f;
+    volatile MatouEntity combatVictimBeast = null;
+    volatile MatouEntity combatVictimBrute = null;
     ServerLevel world = null;
     Item diamond = null;
     boolean foreignNoted = false;
@@ -261,14 +276,15 @@ public class AutoplayMod {
     }
 
     /**
-     * Effective cap want: {@code SPAWN_CAP} env wins, default 4 is the
-     * content cap. Loud on garbage -- a defaulted bound blinds the
-     * breach check silently otherwise. DEV-only.
+     * Effective cap want: {@code SPAWN_CAP} env wins, default 8 is the
+     * two-mob content total (my_beast cap 4 + my_brute cap 4). Loud on
+     * garbage -- a defaulted bound blinds the breach check silently
+     * otherwise. DEV-only.
      */
     private static int spawnCapOfEnv() {
         String raw = System.getenv("SPAWN_CAP");
         if (raw == null || raw.isEmpty()) {
-            return 4;
+            return 8;
         }
         try {
             int v = Integer.parseInt(raw);
@@ -279,7 +295,7 @@ public class AutoplayMod {
         } catch (RuntimeException bad) {
             throw new IllegalArgumentException(
                     "E_AUTOPLAY_SPAWN_CAP:bad <" + raw
-                            + "> (want positive int, default 4)");
+                            + "> (want positive int, default 8)");
         }
     }
 
@@ -342,8 +358,9 @@ public class AutoplayMod {
                         + " (SPAWN=1)");
             }
             if (COMBAT) {
-                System.out.println("[MatouAutoplay] combat armed <strikeAt="
-                        + COMBAT_TICK + "> (COMBAT=1, rides SPAWN=1)");
+                System.out.println("[MatouAutoplay] combat armed <beastAt="
+                        + COMBAT_TICK + " bruteAt=" + COMBAT_TICK_BRUTE
+                        + "> (COMBAT=1, rides SPAWN=1)");
             }
         }
         worldTicks++;
@@ -691,14 +708,15 @@ public class AutoplayMod {
     }
 
     /**
-     * Spawn proof tick: count the bridge-landed beasts (cap bound owned by
-     * the bridge veto -- past cap fails here), kill the first beast past
-     * the kill tick through the loot seam, poll the carrier at the kill
-     * spot. The companion never spawns: every beast here was decided by
-     * the pure SpawnJob and landed by the bridge sink. Custom-entity
-     * scope: the census IS the registered beast (vanilla pigs are a
-     * different species — counting one would breach a cap that is not
-     * its own).
+     * Spawn proof tick: count the bridge-landed beasts per mob (cap bound
+     * owned by the bridge veto -- past cap fails here), kill the first
+     * beast past the kill tick through the loot seam, poll the carrier
+     * at the kill spot. The companion never spawns: every beast here was
+     * decided by the pure SpawnJob and landed by the bridge sink.
+     * Custom-entity scope: the census IS the registered beast (vanilla
+     * pigs are a different species — counting one would breach a cap
+     * that is not its own). Two-mob content: each mob caps at 4 (total
+     * 8), each mob's hp polls against its own spec (beast 20, brute 30).
      */
     private void spawnTick() {
         // Owner discipline (hub decisions/LOOT.md): the census poll goes
@@ -707,7 +725,11 @@ public class AutoplayMod {
         List<MatouEntity> found = getter.getEntitiesOfClass(
                 MatouEntity.class, CENSUS_BOX);
         int beasts = 0;
+        int beastN = 0;
+        int bruteN = 0;
         MatouEntity first = null;
+        MatouEntity firstBeast = null;
+        MatouEntity firstBrute = null;
         for (MatouEntity beast : found) {
             // Owner discipline (hub decisions/LOOT.md): inherited vanilla
             // members go through the declaring stub type, never the beast.
@@ -723,11 +745,30 @@ public class AutoplayMod {
             if (first == null) {
                 first = beast;
             }
+            String mob = beast.mobOrFirst();
+            if ("my_brute".equals(mob)) {
+                bruteN++;
+                if (firstBrute == null) {
+                    firstBrute = beast;
+                }
+            } else {
+                beastN++;
+                if (firstBeast == null) {
+                    firstBeast = beast;
+                }
+            }
         }
         if (beasts > maxBeasts) {
             maxBeasts = beasts;
             System.out.println("[MatouAutoplay] spawn census <" + beasts
+                    + " beast=" + beastN + " brute=" + bruteN
                     + "> at worldTick " + worldTicks);
+        }
+        if (beastN > maxBeast) {
+            maxBeast = beastN;
+        }
+        if (bruteN > maxBrute) {
+            maxBrute = bruteN;
         }
         if (!beastSeen && beasts > 0) {
             beastSeen = true;
@@ -735,18 +776,30 @@ public class AutoplayMod {
             System.out.println("[MatouAutoplay] spawn first beast at "
                     + "worldTick " + firstBeastTick);
         }
-        if (!hpSeen && first != null) {
+        if (!hpSeenBeast && firstBeast != null) {
             // Owner discipline (hub decisions/LOOT.md): inherited vanilla
             // members go through the declaring stub type, never the beast.
-            LivingEntity living = first;
+            LivingEntity living = firstBeast;
             float hp = living.getMaxHealth();
-            if (hp != SPAWN_HP) {
-                spawnFail("hp diverged <want=" + SPAWN_HP + " got=" + hp
-                        + "> at worldTick " + worldTicks);
+            if (hp != SPAWN_HP_BEAST) {
+                spawnFail("hp diverged <my_beast want=" + SPAWN_HP_BEAST
+                        + " got=" + hp + "> at worldTick " + worldTicks);
                 return;
             }
-            hpSeen = true;
-            System.out.println("[MatouAutoplay] spawn hp <" + hp
+            hpSeenBeast = true;
+            System.out.println("[MatouAutoplay] spawn hp <my_beast " + hp
+                    + "> at worldTick " + worldTicks);
+        }
+        if (!hpSeenBrute && firstBrute != null) {
+            LivingEntity living = firstBrute;
+            float hp = living.getMaxHealth();
+            if (hp != SPAWN_HP_BRUTE) {
+                spawnFail("hp diverged <my_brute want=" + SPAWN_HP_BRUTE
+                        + " got=" + hp + "> at worldTick " + worldTicks);
+                return;
+            }
+            hpSeenBrute = true;
+            System.out.println("[MatouAutoplay] spawn hp <my_brute " + hp
                     + "> at worldTick " + worldTicks);
         }
         if (beasts > SPAWN_CAP) {
@@ -754,11 +807,31 @@ public class AutoplayMod {
                     + "> at worldTick " + worldTicks);
             return;
         }
-        if (COMBAT && !combatFailed && beastSeen && first != null) {
-            if (!combatStruck && worldTicks >= COMBAT_TICK) {
-                combatAttack(first);
-            } else if (combatStruck && !combatResolved) {
-                combatPoll();
+        if (beastN > 4) {
+            spawnFail("cap breached <my_beast " + beastN + " > 4"
+                    + "> at worldTick " + worldTicks);
+            return;
+        }
+        if (bruteN > 4) {
+            spawnFail("cap breached <my_brute " + bruteN + " > 4"
+                    + "> at worldTick " + worldTicks);
+            return;
+        }
+        if (COMBAT && !combatFailed && beastSeen) {
+            if (firstBeast != null) {
+                if (!combatStruckBeast && worldTicks >= COMBAT_TICK) {
+                    combatAttack(firstBeast, "my_beast");
+                } else if (combatStruckBeast && !combatResolvedBeast) {
+                    combatPoll("my_beast");
+                }
+            }
+            if (firstBrute != null) {
+                if (!combatStruckBrute
+                        && worldTicks >= COMBAT_TICK_BRUTE) {
+                    combatAttack(firstBrute, "my_brute");
+                } else if (combatStruckBrute && !combatResolvedBrute) {
+                    combatPoll("my_brute");
+                }
             }
         }
         if (!beastKilled && beastSeen && first != null
@@ -852,13 +925,18 @@ public class AutoplayMod {
      * members go through the declaring stub type, never the beast —
      * {@code Entity} for positions/eye/teleport, {@code Player} for the
      * strike itself (declared there), {@code LivingEntity} for the health
-     * read.
+     * read. Per-mob: {@code mob} names the victim (my_beast head x2,
+     * my_brute head x3 — the exact poll owns the multiplier, never a
+     * quiet pick here).
      */
-    private void combatAttack(MatouEntity beast) {
+    private void combatAttack(MatouEntity beast, String mob) {
+        int strikeTick = "my_brute".equals(mob) ? COMBAT_TICK_BRUTE
+                : COMBAT_TICK;
         Player player = combatPlayer();
         if (player == null) {
-            if (worldTicks > COMBAT_TICK + COMBAT_TIMEOUT) {
-                combatFail("player never joined (no strike author)");
+            if (worldTicks > strikeTick + COMBAT_TIMEOUT) {
+                combatFail("player never joined (no strike author <"
+                        + mob + ">)");
             }
             return;
         }
@@ -867,8 +945,14 @@ public class AutoplayMod {
             return;
         }
         Entity body = beast;
-        if (combatVictim == null) {
-            combatVictim = beast;
+        if ("my_brute".equals(mob)) {
+            if (combatVictimBrute == null) {
+                combatVictimBrute = beast;
+            }
+        } else {
+            if (combatVictimBeast == null) {
+                combatVictimBeast = beast;
+            }
         }
         double bx = body.getX();
         double by = body.getY();
@@ -930,39 +1014,66 @@ public class AutoplayMod {
             return;
         }
         LivingEntity living = beast;
-        combatHpBefore = living.getHealth();
+        if ("my_brute".equals(mob)) {
+            combatHpBeforeBrute = living.getHealth();
+        } else {
+            combatHpBeforeBeast = living.getHealth();
+        }
         pbody.moveTo(px, py, pz, yaw, pitch);
         player.attack(beast);
-        combatTick = worldTicks;
-        combatStruck = true;
-        System.out.println("[MatouAutoplay] combat struck <head hp="
-                + combatHpBefore + "> at worldTick " + combatTick);
+        if ("my_brute".equals(mob)) {
+            combatTickBrute = worldTicks;
+            combatStruckBrute = true;
+            System.out.println("[MatouAutoplay] combat struck "
+                    + "<my_brute head hp=" + combatHpBeforeBrute
+                    + "> at worldTick " + combatTickBrute);
+        } else {
+            combatTickBeast = worldTicks;
+            combatStruckBeast = true;
+            System.out.println("[MatouAutoplay] combat struck "
+                    + "<my_beast head hp=" + combatHpBeforeBeast
+                    + "> at worldTick " + combatTickBeast);
+        }
     }
 
     /**
-     * Combat poll: the bridge hook refines the struck hurt to head x2
-     * the same tick, so the wound reads exactly 2.0 (bare-hand 1.0 —
-     * the exact assert fails loudly on any surprise: a 1.0 would be an
-     * unrefined body shot, a 3.0 a crit, a 0.0 a lost hurt).
+     * Combat poll: the bridge hook refines each struck hurt per mob
+     * (beast head x2, brute head x3), so the wound reads exactly 2.0 /
+     * exactly 3.0 (bare-hand 1.0 — the exact assert fails loudly on any
+     * surprise: a 1.0 would be an unrefined body shot, a crit, or a lost
+     * hurt on the wrong mob).
      */
-    private void combatPoll() {
-        if (combatVictim == null) {
-            combatFail("victim lost before poll");
+    private void combatPoll(String mob) {
+        boolean brute = "my_brute".equals(mob);
+        MatouEntity victim =
+                brute ? combatVictimBrute : combatVictimBeast;
+        float before =
+                brute ? combatHpBeforeBrute : combatHpBeforeBeast;
+        int struckAt = brute ? combatTickBrute : combatTickBeast;
+        float want = brute ? 3.0f : 2.0f;
+        if (victim == null) {
+            combatFail("victim lost before poll <" + mob + ">");
             return;
         }
-        LivingEntity living = combatVictim;
+        LivingEntity living = victim;
         float hp = living.getHealth();
-        float drop = combatHpBefore - hp;
-        if (Math.abs(drop - 2.0f) < 1e-3f) {
-            combatResolved = true;
-            System.out.println("[MatouAutoplay] combat resolved <drop="
-                    + drop + " hp=" + hp + "> at worldTick " + worldTicks
-                    + " (elapsed " + (worldTicks - combatTick) + ")");
+        float drop = before - hp;
+        if (Math.abs(drop - want) < 1e-3f) {
+            if (brute) {
+                combatResolvedBrute = true;
+            } else {
+                combatResolvedBeast = true;
+            }
+            System.out.println("[MatouAutoplay] combat resolved <" + mob
+                    + " drop=" + drop + " hp=" + hp + "> at worldTick "
+                    + worldTicks + " (elapsed "
+                    + (worldTicks - struckAt) + ")");
             return;
         }
-        if (worldTicks > combatTick + COMBAT_TIMEOUT) {
-            combatFail("timeout <drop=" + drop + " hp=" + hp
-                    + "> (want exactly 2.0, head x2 over bare-hand 1.0)");
+        if (worldTicks > struckAt + COMBAT_TIMEOUT) {
+            combatFail("timeout <" + mob + " drop=" + drop + " hp=" + hp
+                    + "> (want exactly " + want + ", head x"
+                    + (brute ? "3" : "2") + " over bare-hand 1.0)");
         }
     }
 
@@ -1034,7 +1145,8 @@ public class AutoplayMod {
                 && (!SPIKE || repopped)
                 && (!LOOT || (oreDropped && beastDropped))
                 && (!SPAWN || (beastSeen && spawnCarrierDropped))
-                && (!COMBAT || combatResolved)
+                && (!COMBAT
+                        || (combatResolvedBeast && combatResolvedBrute))
                 && !done) {
             done = true;
             Minecraft.getInstance().stop();

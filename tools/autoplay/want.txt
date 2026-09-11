@@ -51,9 +51,9 @@ M net/minecraft/world/item/ItemStack getItem m_41720_ ()Lnet/minecraft/world/ite
 M net/minecraft/world/level/EntityGetter getEntitiesOfClass m_45976_ (Ljava/lang/Class;Lnet/minecraft/world/phys/AABB;)Ljava/util/List; 0
 M net/minecraft/resources/ResourceKey location m_135782_ ()Lnet/minecraft/resources/ResourceLocation; 0
 # Spawn proof (SPAWN=1): the companion polls the bridge-landed pigs (the
-# living census through Entity/isAlive, the landed max health through
-# LivingEntity/getMaxHealth against the mirrored SPAWN_HP) and kills the
-# first pig past the kill tick through the loot seam. Same practice as
+# living census through Entity/isAlive, each mob's landed max health
+# through LivingEntity/getMaxHealth against the mirrored per-mob hp) and
+# kills the first pig past the kill tick through the loot seam. Same practice as
 # above; the census id rides Entity/getId. Static-ness documentary on
 # methods (exact SRG + descriptor + javap is the pin).
 M net/minecraft/world/entity/Entity getId m_19879_ ()I 0

@@ -1,5 +1,6 @@
 package net.minecraft.world.entity.animal;
 
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
@@ -27,5 +28,22 @@ public class Pig extends LivingEntity {
 
     public static AttributeSupplier.Builder createAttributes() {
         return null;
+    }
+
+    /**
+     * Spawn-identity compile stub: 47.2.0 {@code Pig} declares the
+     * concrete persist pair the bridge beast extends with its short mob
+     * name ({@code addAdditionalSaveData} is {@code m_7380_},
+     * {@code readAdditionalSaveData} is {@code m_7378_}, both public
+     * here — the 1.12 protected-helper shape does not port — measured
+     * via server.txt + joined.tsrg v2 + javap against the pinned bytes;
+     * the public save/load live one level up on {@code Entity} and
+     * their super calls would emit an unmappable intermediate owner,
+     * hub decisions/VIRTUAL_HITBOXES.md second-beast row). Never runs.
+     */
+    public void addAdditionalSaveData(CompoundTag compound) {
+    }
+
+    public void readAdditionalSaveData(CompoundTag compound) {
     }
 }

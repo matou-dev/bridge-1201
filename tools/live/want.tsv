@@ -52,3 +52,8 @@ METHODS_CLIENT	com/mojang/blaze3d/vertex/PoseStack	last	()Lcom/mojang/blaze3d/ve
 METHODS_CLIENT	com/mojang/blaze3d/vertex/PoseStack$Pose	pose	()Lorg/joml/Matrix4f;	0
 FIELDS_CLIENT	net/minecraft/client/Minecraft	level	Lnet/minecraft/client/multiplayer/ClientLevel;	0
 SAM_CLIENT	net/minecraft/client/renderer/entity/EntityRendererProvider	create	(Lnet/minecraft/client/renderer/entity/EntityRendererProvider$Context;)Lnet/minecraft/client/renderer/entity/EntityRenderer;	0
+METHODS	net/minecraft/world/entity/animal/Pig	addAdditionalSaveData	(Lnet/minecraft/nbt/CompoundTag;)V	0
+METHODS	net/minecraft/world/entity/animal/Pig	readAdditionalSaveData	(Lnet/minecraft/nbt/CompoundTag;)V	0
+METHODS	net/minecraft/nbt/CompoundTag	contains	(Ljava/lang/String;)Z	0
+METHODS	net/minecraft/nbt/CompoundTag	getString	(Ljava/lang/String;)Ljava/lang/String;	0
+METHODS	net/minecraft/nbt/CompoundTag	putString	(Ljava/lang/String;Ljava/lang/String;)V	0
