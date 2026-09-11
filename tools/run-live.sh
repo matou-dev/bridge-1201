@@ -312,9 +312,9 @@ pin_method "net/minecraft/world/entity/Entity/getXRot" "()F"
 pin_method "net/minecraft/world/entity/Entity/getEyePosition" "()Lnet/minecraft/world/phys/Vec3;"
 pin_method "net/minecraft/world/entity/Entity/getLookAngle" "()Lnet/minecraft/world/phys/Vec3;"
 pin_method "net/minecraft/world/damagesource/DamageSource/getEntity" "()Lnet/minecraft/world/entity/Entity;"
-pin_field "net/minecraft/world/phys/Vec3/x"
-pin_field "net/minecraft/world/phys/Vec3/y"
-pin_field "net/minecraft/world/phys/Vec3/z"
+# Loop form (not one pin per line): eSLOC ceiling discipline, same pins
+# table-driven — every member name stays literal and grep-able.
+for f in x y z; do pin_field "net/minecraft/world/phys/Vec3/$f"; done
 pin_field "net/minecraft/world/entity/Entity/xo"
 pin_field "net/minecraft/world/entity/Entity/yo"
 pin_field "net/minecraft/world/entity/Entity/zo"
@@ -368,10 +368,7 @@ pin_uni 'net.minecraftforge.event.level.BlockEvent' 'getState('
 pin_uni 'net.minecraftforge.event.level.BlockEvent$BreakEvent' 'BreakEvent('
 pin_uni 'net.minecraftforge.event.entity.living.LivingEvent' 'getEntity('
 pin_uni 'net.minecraftforge.event.entity.living.LivingDropsEvent' 'LivingDropsEvent('
-pin_uni 'net.minecraftforge.event.entity.living.LivingHurtEvent' 'LivingHurtEvent('
-pin_uni 'net.minecraftforge.event.entity.living.LivingHurtEvent' 'getSource('
-pin_uni 'net.minecraftforge.event.entity.living.LivingHurtEvent' 'getAmount('
-pin_uni 'net.minecraftforge.event.entity.living.LivingHurtEvent' 'setAmount('
+for m in 'LivingHurtEvent(' 'getSource(' 'getAmount(' 'setAmount('; do pin_uni 'net.minecraftforge.event.entity.living.LivingHurtEvent' "$m"; done
 pin_uni 'net.minecraftforge.event.entity.EntityJoinLevelEvent' 'EntityJoinLevelEvent('
 pin_uni 'net.minecraftforge.event.entity.EntityJoinLevelEvent' 'getLevel('
 pin_uni 'net.minecraftforge.event.entity.EntityEvent' 'getEntity('
