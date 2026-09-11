@@ -1,6 +1,7 @@
 package net.minecraft.world.entity;
 
 import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * Loot compile stub: shape-only 1.20.1 (Mojmap) vanilla API used by
@@ -86,5 +87,27 @@ public class Entity {
 
     public void moveTo(double x, double y, double z, float yaw,
             float pitch) {
+    }
+
+    /**
+     * Combat compile stub: 47.2.0 {@code Entity} declares the attacker
+     * eye/look surface the bridge combat hook reads through this
+     * declaring type (owner discipline, hub decisions/LOOT.md) —
+     * {@code getEyePosition} is the no-arg {@code ()Vec3} overload and
+     * {@code getLookAngle} the no-arg {@code ()Vec3} look, both measured
+     * via server.txt + joined.tsrg v2 + javap against the pinned 47.2.0
+     * bytes. The autoplay combat leg reads the standing eye through
+     * {@code getEyeHeight} (same measure). Never runs.
+     */
+    public Vec3 getEyePosition() {
+        return null;
+    }
+
+    public Vec3 getLookAngle() {
+        return null;
+    }
+
+    public float getEyeHeight() {
+        return 0.0f;
     }
 }

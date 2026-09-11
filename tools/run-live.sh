@@ -262,12 +262,12 @@ echo "ok d3-live : server provisioned (pins verified)"
 #    Production classes stay Mojmap (installer MERGE_MAPPING keeps classes
 #    official) — only members reobfuscate, so no class lines are needed.
 # Mechanics live in hub/tools/live-derive.sh (era 1.20), rows in
-# tools/live/want.tsv — same 48 lines, byte-identical output.
+# tools/live/want.tsv — same 54 lines, byte-identical output.
 SRG_NARROW="$D3_DIR/srg-narrow.srg"
 live_derive_mojmaps "$D3_DIR/mcp_config-1.20.1-20230612.114412.zip" "$D3_DIR/server-mappings.txt" "$MC_INNER" "$J17/javap" "$SRG_NARROW" "$D3_DIR/client-mappings.txt" "$MCCLIENT" "tools/live/want.tsv"
 # 2b. Pin every derived line: a derivation the SRG does not confirm is a loud
 #     failure, never a silent default. Production classes stay Mojmap — only
-#     these 48 members reobfuscate, exactly.
+#     these 54 members reobfuscate, exactly.
 pin_method "net/minecraft/world/level/Level/setBlock" "(Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;I)Z"
 pin_method "net/minecraft/world/level/Level/dimension" "()Lnet/minecraft/resources/ResourceKey;"
 pin_method "net/minecraft/world/level/block/Block/defaultBlockState" "()Lnet/minecraft/world/level/block/state/BlockState;"
@@ -303,6 +303,18 @@ pin_method "net/minecraft/client/renderer/entity/EntityRendererProvider/create" 
 pin_method "net/minecraft/world/item/Item\$Properties/stacksTo" "(I)Lnet/minecraft/world/item/Item\$Properties;"
 pin_method "net/minecraft/world/entity/Entity/getYRot" "()F"
 pin_method "net/minecraft/world/entity/Entity/getXRot" "()F"
+# Combat tranche (hub decisions/VIRTUAL_HITBOXES.md, server weakspot
+# hook): Entity/getEyePosition + getLookAngle (the attacker eye/look
+# surface as Vec3, owner Entity — 1.20.1-native, no height arithmetic),
+# DamageSource/getEntity (the true attacker behind the hurt source)
+# and Vec3/x/y/z (the look/eye components — the 1.12 Vec3d owner does
+# not port). The narrow map grows 48 -> 54 lines.
+pin_method "net/minecraft/world/entity/Entity/getEyePosition" "()Lnet/minecraft/world/phys/Vec3;"
+pin_method "net/minecraft/world/entity/Entity/getLookAngle" "()Lnet/minecraft/world/phys/Vec3;"
+pin_method "net/minecraft/world/damagesource/DamageSource/getEntity" "()Lnet/minecraft/world/entity/Entity;"
+pin_field "net/minecraft/world/phys/Vec3/x"
+pin_field "net/minecraft/world/phys/Vec3/y"
+pin_field "net/minecraft/world/phys/Vec3/z"
 pin_field "net/minecraft/world/entity/Entity/xo"
 pin_field "net/minecraft/world/entity/Entity/yo"
 pin_field "net/minecraft/world/entity/Entity/zo"
@@ -324,8 +336,8 @@ pin_method "com/mojang/blaze3d/vertex/PoseStack\$Pose/pose" "()Lorg/joml/Matrix4
 pin_field "net/minecraft/world/item/Items/DIAMOND"
 pin_field "net/minecraft/world/entity/EntityType/PIG"
 pin_field "net/minecraft/world/entity/ai/attributes/Attributes/MAX_HEALTH"
-[ "$(grep -c . "$SRG_NARROW")" = "48" ] \
-  || { echo "FAIL d3-live : narrow map drift (want 48 lines)"; exit 1; }
+[ "$(grep -c . "$SRG_NARROW")" = "54" ] \
+  || { echo "FAIL d3-live : narrow map drift (want 54 lines)"; exit 1; }
 echo "ok d3-live : stubs pinned to derived SRG"
 
 # 2c. Pin every stubbed member against the provisioned jars. Forge classes
@@ -356,6 +368,10 @@ pin_uni 'net.minecraftforge.event.level.BlockEvent' 'getState('
 pin_uni 'net.minecraftforge.event.level.BlockEvent$BreakEvent' 'BreakEvent('
 pin_uni 'net.minecraftforge.event.entity.living.LivingEvent' 'getEntity('
 pin_uni 'net.minecraftforge.event.entity.living.LivingDropsEvent' 'LivingDropsEvent('
+pin_uni 'net.minecraftforge.event.entity.living.LivingHurtEvent' 'LivingHurtEvent('
+pin_uni 'net.minecraftforge.event.entity.living.LivingHurtEvent' 'getSource('
+pin_uni 'net.minecraftforge.event.entity.living.LivingHurtEvent' 'getAmount('
+pin_uni 'net.minecraftforge.event.entity.living.LivingHurtEvent' 'setAmount('
 pin_uni 'net.minecraftforge.event.entity.EntityJoinLevelEvent' 'EntityJoinLevelEvent('
 pin_uni 'net.minecraftforge.event.entity.EntityJoinLevelEvent' 'getLevel('
 pin_uni 'net.minecraftforge.event.entity.EntityEvent' 'getEntity('
@@ -667,10 +683,13 @@ rm -rf "$SERV/world" "$SERV/logs"
 live_boot "$SERV" "$BOOT_SECS" "boot-d3.log" sh run.sh nogui
 
 # 6. Fail loudly on any runtime refusal or linkage error (stdout log plus
-#    the rolling server log — Forge splits output across both).
+#    the rolling server log — Forge splits output across both). E_HIT rides
+#    it too: the combat hook refuses corrupt attacker state loudly out of
+#    SPI (hub decisions/VIRTUAL_HITBOXES.md) — a NaN eye that passed would
+#    mean a defaulted multiplier somewhere.
 LOGS="$SERV/boot-d3.log"
 [ -f "$SERV/logs/latest.log" ] && LOGS="$LOGS $SERV/logs/latest.log"
-live_verdict "NoSuchMethodError\|NoSuchFieldError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|E_LOOT\|E_SPAWN\|E_SPIKE\|E_MODEL\|Encountered an unexpected exception" "NoSuchMethodError\|NoSuchFieldError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|E_LOOT\|E_SPAWN\|E_SPIKE\|E_MODEL\|Caused by" $LOGS
+live_verdict "NoSuchMethodError\|NoSuchFieldError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|E_LOOT\|E_SPAWN\|E_SPIKE\|E_MODEL\|E_HIT\|Encountered an unexpected exception" "NoSuchMethodError\|NoSuchFieldError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|E_LOOT\|E_SPAWN\|E_SPIKE\|E_MODEL\|E_HIT\|Caused by" $LOGS
 # Registration proof: the setup-time verify line carries the registry key
 # (1.20.1 has no numeric block ids — the anvil probe reads namespaced
 # names, and this line proves the custom name resolved through the

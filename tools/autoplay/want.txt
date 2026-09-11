@@ -59,3 +59,17 @@ M net/minecraft/resources/ResourceKey location m_135782_ ()Lnet/minecraft/resour
 M net/minecraft/world/entity/Entity getId m_19879_ ()I 0
 M net/minecraft/world/entity/Entity isAlive m_6084_ ()Z 0
 M net/minecraft/world/entity/LivingEntity getMaxHealth m_21233_ ()F 0
+# Combat proof (COMBAT=1, rides a SPAWN=1 run): the companion teleports
+# the joined player beside the first bridge-landed beast (Entity/moveTo
+# carries pos + yaw + pitch atomically — the 1.12 setPositionAndRotation
+# shape does not port), aims at the head bone parsed pure from the
+# shipped shape (the eye it aims from reads through Entity/getEyeHeight,
+# declaring type), and drives the genuine vanilla attack path
+# (Player/attack — declared on Player, not the same-named ServerPlayer
+# row), then polls the struck health through LivingEntity/getHealth (the
+# same-descriptor max-health sibling is NOT this, hence the SRG anchor).
+# Same derive practice.
+M net/minecraft/world/entity/player/Player attack m_5706_ (Lnet/minecraft/world/entity/Entity;)V 0
+M net/minecraft/world/entity/LivingEntity getHealth m_21223_ ()F 0
+M net/minecraft/world/entity/Entity getEyeHeight m_20192_ ()F 0
+M net/minecraft/world/entity/Entity moveTo m_7678_ (DDDFF)V 0

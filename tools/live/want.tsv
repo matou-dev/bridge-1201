@@ -31,6 +31,12 @@ METHODS	net/minecraft/world/entity/EntityType$EntityFactory	create	(Lnet/minecra
 METHODS	net/minecraft/world/item/Item$Properties	stacksTo	(I)Lnet/minecraft/world/item/Item$Properties;	0
 METHODS	net/minecraft/world/entity/Entity	getYRot	()F	0
 METHODS	net/minecraft/world/entity/Entity	getXRot	()F	0
+METHODS	net/minecraft/world/entity/Entity	getEyePosition	()Lnet/minecraft/world/phys/Vec3;	0
+METHODS	net/minecraft/world/entity/Entity	getLookAngle	()Lnet/minecraft/world/phys/Vec3;	0
+METHODS	net/minecraft/world/damagesource/DamageSource	getEntity	()Lnet/minecraft/world/entity/Entity;	0
+FIELDS	net/minecraft/world/phys/Vec3	x	D	0
+FIELDS	net/minecraft/world/phys/Vec3	y	D	0
+FIELDS	net/minecraft/world/phys/Vec3	z	D	0
 FIELDS	net/minecraft/world/level/Level	OVERWORLD	Lnet/minecraft/resources/ResourceKey;	1
 FIELDS	net/minecraft/world/item/Items	DIAMOND	Lnet/minecraft/world/item/Item;	1
 FIELDS	net/minecraft/world/entity/EntityType	PIG	Lnet/minecraft/world/entity/EntityType;	1

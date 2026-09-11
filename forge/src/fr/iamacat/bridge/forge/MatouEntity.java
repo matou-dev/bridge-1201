@@ -5,6 +5,7 @@ import fr.iamacat.spi.hit.BoneBox;
 import fr.iamacat.spi.hit.Hittable;
 import java.util.List;
 import java.util.Map;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.animal.Pig;
 import net.minecraft.world.level.Level;
@@ -34,9 +35,9 @@ import net.minecraft.world.level.Level;
  * <p>Model tranche (hub decisions/MATOU_MODEL.md): the beast is a
  * {@code Hittable} over the shipped {@code my_beast.geo.json} shape —
  * world-space bone boxes ride the entity origin (feet), the head stays
- * the 2x weakspot. No combat hook reads them yet (that is the combat
- * tranche); this only serves the authoritative shape both sides will
- * ray-test. 1.20.1 reads the origin through the {@code getX/Y/Z}
+ * the 2x weakspot. The combat hook (hub decisions/VIRTUAL_HITBOXES.md)
+ * ray-tests them server-side; this serves the authoritative shape both
+ * sides test. 1.20.1 reads the origin through the {@code getX/Y/Z}
  * getters (the 1.12 {@code posX} field shape does not port).
  */
 public class MatouEntity extends Pig implements Hittable {
@@ -51,7 +52,16 @@ public class MatouEntity extends Pig implements Hittable {
 
     @Override
     public List<BoneBox> hitBoxes() {
-        return BeastModel.cached().boxesAt(getX(), getY(), getZ());
+        // Owner discipline (measured live on 1122 as NoSuchFieldError
+        // posX, fixed there in 840507c, and on 1165 as NoSuchMethodError
+        // getPosX, fixed there in 605b623, hub decisions/LOOT.md): a bare
+        // getX() call owns MatouEntity, whose reobf walk dies at the
+        // vanilla Pig link — inherited vanilla members go through the
+        // declaring stub type (Entity), never the beast. Landed with the
+        // fix, never red-crashed first.
+        Entity self = this;
+        return BeastModel.cached().boxesAt(self.getX(), self.getY(),
+                self.getZ());
     }
 
     @Override

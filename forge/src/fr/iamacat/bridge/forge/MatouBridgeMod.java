@@ -21,6 +21,9 @@ import fr.iamacat.spi.Snapshot;
 import fr.iamacat.spi.SpawnStates;
 import fr.iamacat.spi.StateVocabulary;
 import fr.iamacat.spi.VocabularyPack;
+import fr.iamacat.spi.hit.HitTester;
+import fr.iamacat.spi.hit.RayHit;
+import fr.iamacat.spi.hit.Vec3d;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -47,10 +50,12 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.EntityGetter;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.EntityJoinLevelEvent;
 import net.minecraftforge.event.entity.living.LivingDropsEvent;
+import net.minecraftforge.event.entity.living.LivingHurtEvent;
 import net.minecraftforge.event.level.BlockEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.LogicalSide;
@@ -207,6 +212,15 @@ public final class MatouBridgeMod {
     /** Spike scope: vanilla stone only. Other breaks are not the spike's
      * business (metadata/T.E. restore is an explicit non-goal). */
     static final String REPOP_BLOCK = "minecraft:stone";
+    /** Combat reach (hub decisions/VIRTUAL_HITBOXES.md, server weakspot
+     * hook): eye-to-hitVec cutoff for the bone ray-test. Vanilla
+     * survival validates ~3.0 eye-to-ORIGIN, but bone boxes extend past
+     * the origin (the head rides a full block above the feet), so the
+     * eye-to-surface distance of a legitimate headshot exceeds the
+     * origin budget — 4.0 is vanilla 3.0 plus one block of bone extent.
+     * A constant, never a default: attribute-driven reach is a named
+     * re-opener, not a quiet fallback. */
+    static final double COMBAT_REACH = 4.0d;
     /** Loot scope: the operator wire blocks, resolved at wire time (T2
      * operator-override tranche, hub decisions/SPAWN.md — the packs.cfg
      * wire-block column names the ore, no bridge constant does; other
@@ -647,6 +661,78 @@ public final class MatouBridgeMod {
         drops.record(harvest, tick);
         System.out.println("[MatouBridge] loot recorded <" + harvest
                 + "> at tick " + tick);
+    }
+
+    /**
+     * Combat hook: a server-side dim-0 hurt on the registered beast
+     * resolves the struck bone through the pure SPI ray-test (hub
+     * decisions/VIRTUAL_HITBOXES.md, server weakspot hook) and scales
+     * the vanilla amount by the bone weakspot multiplier (head 2x).
+     *
+     * <p>Server-authoritative by construction: runs on the server thread
+     * only (client echoes ignored — the server fires its own event for
+     * the same hurt), re-derives eye/look from the live attacker (never
+     * trusts a packet bone claim — there is no packet in this tranche),
+     * and falls back to vanilla silently in the three non-ray cases:
+     * environmental damage (no attacker entity to ray from), a hurt the
+     * coarse vanilla box caught but no bone box covers (glancing —
+     * vanishingly rare on the 2-bone beast, never a refusal), and any
+     * non-beast target (not our species). Corrupt attacker state (NaN
+     * eye/look) refuses loudly out of the SPI constructors
+     * ({@code E_HIT_VEC:nan} / {@code E_HIT_DIR:zero}), never a
+     * defaulted multiplier.
+     *
+     * <p>Non-goal (named re-opener, never smuggled in): the vanilla
+     * pre-rejection (BUG-042 — an origin-distance veto that never fires
+     * this event) stays vanilla; this hook only refines hurts vanilla
+     * delivers.
+     *
+     * <p>47.2.0 shape (measured via server.txt + joined.tsrg v2 + javap,
+     * never ported blind from 1165): the hurt entity lives on the
+     * {@code LivingEvent} base behind {@code getEntity()} as
+     * {@code LivingEntity} (the 1.16.5 {@code getEntityLiving} shape does
+     * not port), the source behind {@code LivingHurtEvent.getSource()},
+     * the true attacker behind {@code DamageSource.getEntity()} (the
+     * direct entity is the projectile, not the author); eye/look ride
+     * the declaring {@code Entity} type as {@code Vec3}
+     * ({@code getEyePosition}/{@code getLookAngle} — owner discipline,
+     * hub decisions/LOOT.md; no height arithmetic, the eye position is
+     * direct) with components on the declaring {@code Vec3} fields; the
+     * dim gate stays the {@code OVERWORLD} key.
+     */
+    @SubscribeEvent
+    public void onHurt(LivingHurtEvent event) {
+        LivingEntity hurt = event.getEntity();
+        if (!(hurt instanceof MatouEntity)) {
+            return;
+        }
+        Entity body = hurt;
+        Level level = body.level();
+        if (level.isClientSide()) {
+            return;
+        }
+        if (!Level.OVERWORLD.equals(level.dimension())) {
+            return;
+        }
+        Entity attacker = event.getSource().getEntity();
+        if (attacker == null) {
+            return;
+        }
+        Vec3 eye = attacker.getEyePosition();
+        Vec3 look = attacker.getLookAngle();
+        Vec3d origin = new Vec3d(eye.x, eye.y, eye.z);
+        Vec3d dir = new Vec3d(look.x, look.y, look.z);
+        RayHit hit = HitTester.test((MatouEntity) hurt, origin, dir,
+                COMBAT_REACH);
+        if (hit == null) {
+            return;
+        }
+        float before = event.getAmount();
+        float mult = ((MatouEntity) hurt).weakspotMultiplier(hit.boneName);
+        event.setAmount(before * mult);
+        System.out.println("[MatouBridge] combat resolved <bone="
+                + hit.boneName + " mult=" + mult + " dmg=" + before + "->"
+                + event.getAmount() + ">");
     }
 
     /**
