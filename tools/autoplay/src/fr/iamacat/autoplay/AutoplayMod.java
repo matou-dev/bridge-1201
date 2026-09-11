@@ -573,14 +573,14 @@ public class AutoplayMod {
         if (diamond != null) {
             return diamond;
         }
-        ResourceLocation id = new ResourceLocation("minecraft:diamond");
+        ResourceLocation id = new ResourceLocation("example1:my_gem");
         if (!ForgeRegistries.ITEMS.containsKey(id)) {
-            lootFail("unknown <minecraft:diamond> (want vanilla diamond)");
+            lootFail("unknown <example1:my_gem> (want registered gem)");
             return null;
         }
         diamond = ForgeRegistries.ITEMS.getValue(id);
         if (diamond == null) {
-            lootFail("unknown <minecraft:diamond> (want vanilla diamond)");
+            lootFail("unknown <example1:my_gem> (want registered gem)");
             return null;
         }
         return diamond;
@@ -604,7 +604,7 @@ public class AutoplayMod {
                     oreDropped = true;
                     oreDropTick = worldTicks;
                     System.out.println("[MatouAutoplay] loot ore dropped "
-                            + "<diamond> at worldTick " + oreDropTick
+                            + "<example1:my_gem> at worldTick " + oreDropTick
                             + " (elapsed " + (oreDropTick - lootOreTick)
                             + ", want immediate)");
                     break;
@@ -622,7 +622,7 @@ public class AutoplayMod {
                     beastDropped = true;
                     beastDropTick = worldTicks;
                     System.out.println("[MatouAutoplay] loot beast dropped "
-                            + "<diamond> at worldTick " + beastDropTick
+                            + "<example1:my_gem> at worldTick " + beastDropTick
                             + " (elapsed " + (beastDropTick - lootBeastTick)
                             + ", want immediate)");
                     break;
@@ -764,7 +764,7 @@ public class AutoplayMod {
                 spawnCarrierDropped = true;
                 spawnCarrierTick = worldTicks;
                 System.out.println("[MatouAutoplay] spawn beast dropped "
-                        + "<diamond> at worldTick " + spawnCarrierTick
+                        + "<example1:my_gem> at worldTick " + spawnCarrierTick
                         + " (elapsed " + (spawnCarrierTick - killTick)
                         + ", want immediate)");
                 return;

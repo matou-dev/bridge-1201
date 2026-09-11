@@ -10,4 +10,12 @@ import net.minecraft.world.level.ItemLike;
  * bytes — {@code Item implements ItemLike}).
  */
 public class Item implements ItemLike {
+    public static class Properties {
+        public Properties stacksTo(int maxStackSize) {
+            return this;
+        }
+    }
+
+    public Item(Item.Properties properties) {
+    }
 }

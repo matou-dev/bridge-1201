@@ -16,6 +16,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.entity.animal.Pig;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.Block;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.EntityRenderersEvent;
@@ -63,6 +64,12 @@ public final class Example1Mod {
             new ArrayList<PendingBlock>();
     private static final Map<String, RegistryObject<Block>> REGISTERED =
             new HashMap<String, RegistryObject<Block>>();
+    private static final DeferredRegister<Item> ITEMS =
+            DeferredRegister.create(ForgeRegistries.ITEMS, MODID);
+    private static final List<PendingItem> PENDING_ITEMS =
+            new ArrayList<PendingItem>();
+    private static final Map<String, RegistryObject<Item>> REGISTERED_ITEMS =
+            new HashMap<String, RegistryObject<Item>>();
     /**
      * Entity tranche: the one generic beast, queued on the entity
      * registry under this mod's own id (same {@code (modid, short name)}
@@ -101,6 +108,7 @@ public final class Example1Mod {
         IEventBus bus =
                 FMLJavaModLoadingContext.get().getModEventBus();
         BLOCKS.register(bus);
+        ITEMS.register(bus);
         ENTITIES.register(bus);
         bus.addListener(this::setup);
         bus.addListener((EntityAttributeCreationEvent event) ->
@@ -121,6 +129,7 @@ public final class Example1Mod {
             queueCustom(spec);
         }
         registerBeast(specs);
+        registerItems(specs);
         for (PendingBlock p : PENDING) {
             try {
                 REGISTERED.put(p.name, BLOCKS.register(p.shortName,
@@ -131,6 +140,16 @@ public final class Example1Mod {
             }
         }
         PENDING.clear();
+        for (PendingItem p : PENDING_ITEMS) {
+            try {
+                REGISTERED_ITEMS.put(p.name, ITEMS.register(p.shortName,
+                        () -> new MatouItem(p.stack)));
+            } catch (Exception e) {
+                throw new IllegalArgumentException("E_REG_ITEM:refused <"
+                        + p.name + "> (" + e.getMessage() + ")", e);
+            }
+        }
+        PENDING_ITEMS.clear();
     }
 
     /**
@@ -151,6 +170,18 @@ public final class Example1Mod {
                                 + e.getKey() + ">");
             }
             System.out.println("[MatouBridge] registered <" + e.getKey()
+                    + "> id " + e.getValue().getId());
+        }
+        for (Map.Entry<String, RegistryObject<Item>> e
+                : REGISTERED_ITEMS.entrySet()) {
+            Item got = ForgeRegistries.ITEMS.getValue(
+                    new ResourceLocation(e.getKey()));
+            if (got == null || got != e.getValue().get()) {
+                throw new IllegalStateException(
+                        "E_REG_UNRESOLVED:registered but unresolvable <"
+                                + e.getKey() + ">");
+            }
+            System.out.println("[MatouBridge] registered-item <" + e.getKey()
                     + "> id " + e.getValue().getId());
         }
         if (registeredEntity != null) {
@@ -443,4 +474,90 @@ public final class Example1Mod {
                     + ownedFile + "> (no " + getter + ")", e);
         }
     }
+
+    private static void registerItems(List<Packs.PackSpec> specs) {
+        Set<String> owned = new HashSet<String>();
+        for (Packs.PackSpec spec : specs) {
+            String path = spec.args.get("ownedFile");
+            if (path != null) {
+                owned.add(path);
+            }
+        }
+        for (String ownedFile : owned) {
+            for (Object o : loadItemSpecs(ownedFile)) {
+                String shortName = (String) specField(o, "name", ownedFile);
+                String want = MODID + ":" + shortName;
+                if (REGISTERED_ITEMS.containsKey(want) || pendingItemContains(want)) {
+                    continue;
+                }
+                if (ForgeRegistries.ITEMS.containsKey(new ResourceLocation(want))) {
+                    throw new IllegalArgumentException(
+                            "E_REG_ITEM:already registered <" + want + ">");
+                }
+                Object s = specField(o, "stack", ownedFile);
+                if (!(s instanceof Integer)) {
+                    throw new IllegalArgumentException(
+                            "E_REG_SPEC:shape <" + ownedFile + "> (bad stack type)");
+                }
+                int stack = ((Integer) s).intValue();
+                PENDING_ITEMS.add(new PendingItem(want, shortName, stack));
+            }
+        }
+    }
+
+    private static boolean pendingItemContains(String want) {
+        for (PendingItem p : PENDING_ITEMS) {
+            if (p.name.equals(want)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static final class PendingItem {
+        final String name;
+        final String shortName;
+        final int stack;
+
+        PendingItem(String name, String shortName, int stack) {
+            this.name = name;
+            this.shortName = shortName;
+            this.stack = stack;
+        }
+    }
+
+    private static List<?> loadItemSpecs(String ownedFile) {
+        final Class<?> cls;
+        try {
+            cls = Class.forName("fr.iamacat.example1.ItemSpec");
+        } catch (ClassNotFoundException e) {
+            throw new IllegalArgumentException("E_REG_SPEC:missing "
+                    + "example1 for <" + ownedFile + "> ("
+                    + e.getMessage() + ")", e);
+        }
+        final Method fromFile;
+        try {
+            fromFile = cls.getMethod("fromFile", String.class);
+        } catch (NoSuchMethodException e) {
+            throw new IllegalArgumentException("E_REG_SPEC:shape "
+                    + "<fr.iamacat.example1.ItemSpec> ("
+                    + e.getMessage() + ")", e);
+        }
+        try {
+            Object out = fromFile.invoke(null, ownedFile);
+            if (!(out instanceof List)) {
+                throw new IllegalStateException("E_REG_SPEC:shape "
+                        + "<fromFile> (want List)");
+            }
+            return (List<?>) out;
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            throw new IllegalArgumentException("E_REG_SPEC:unreadable <"
+                    + ownedFile + "> (" + cause.getMessage() + ")", e);
+        } catch (IllegalAccessException e) {
+            throw new IllegalArgumentException("E_REG_SPEC:shape <"
+                    + ownedFile + "> (" + e.getMessage() + ")", e);
+        }
+    }
 }
+

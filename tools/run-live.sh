@@ -429,6 +429,9 @@ WANT_METHODS = [
      "()Lnet/minecraft/world/entity/ai/attributes/AttributeSupplier;", False),
     ("net/minecraft/world/entity/EntityType$EntityFactory", "create",
      "(Lnet/minecraft/world/entity/EntityType;Lnet/minecraft/world/level/Level;)Lnet/minecraft/world/entity/Entity;", False),
+    # Item registration tranche (hub decisions/ITEM_REGISTRATION.md):
+    ("net/minecraft/world/item/Item$Properties", "stacksTo",
+     "(I)Lnet/minecraft/world/item/Item$Properties;", False),
 ]
 # Vanilla SAMs our lambdas/method-refs target (see the Reobf note):
 # same triple-lock shape as WANT_METHODS, except the javap leg — client
@@ -538,7 +541,7 @@ for owner, mcp, desc, want_static in WANT_SAM_CLIENT:
     # is documentary (an interface SAM is never static) and unchecked.
     sd = srg_desc(od, obf2srg)
     lines.append("MD: %s/%s %s %s/%s %s" % (obf2srg[obf_owner], tm[0]["srg"], sd, owner, mcp, desc))
-assert len(lines) == 35, "E_SRG_DERIVE:want 35 lines, got %d" % len(lines)
+assert len(lines) == 36, "E_SRG_DERIVE:want 36 lines, got %d" % len(lines)
 open(outpath, "w").write("\n".join(lines) + "\n")
 print("ok d3-live : narrow SRG derived (%d lines)" % len(lines))
 EOF
@@ -586,11 +589,12 @@ pin_method "net/minecraft/world/entity/animal/Pig/createAttributes" "()Lnet/mine
 pin_method "net/minecraft/world/entity/ai/attributes/AttributeSupplier\$Builder/build" "()Lnet/minecraft/world/entity/ai/attributes/AttributeSupplier;"
 pin_method "net/minecraft/world/entity/EntityType\$EntityFactory/create" "(Lnet/minecraft/world/entity/EntityType;Lnet/minecraft/world/level/Level;)Lnet/minecraft/world/entity/Entity;"
 pin_method "net/minecraft/client/renderer/entity/EntityRendererProvider/create" "(Lnet/minecraft/client/renderer/entity/EntityRendererProvider\$Context;)Lnet/minecraft/client/renderer/entity/EntityRenderer;"
+pin_method "net/minecraft/world/item/Item\$Properties/stacksTo" "(I)Lnet/minecraft/world/item/Item\$Properties;"
 pin_field "net/minecraft/world/item/Items/DIAMOND"
 pin_field "net/minecraft/world/entity/EntityType/PIG"
 pin_field "net/minecraft/world/entity/ai/attributes/Attributes/MAX_HEALTH"
-[ "$(grep -c . "$SRG_NARROW")" = "35" ] \
-  || { echo "FAIL d3-live : narrow map drift (want 35 lines)"; exit 1; }
+[ "$(grep -c . "$SRG_NARROW")" = "36" ] \
+  || { echo "FAIL d3-live : narrow map drift (want 36 lines)"; exit 1; }
 echo "ok d3-live : stubs pinned to derived SRG"
 
 # 2c. Pin every stubbed member against the provisioned jars. Forge classes
@@ -611,6 +615,7 @@ pin_uni 'net.minecraftforge.event.TickEvent' 'phase'
 pin_uni 'net.minecraftforge.event.TickEvent$Phase' 'END'
 pin_uni 'net.minecraftforge.common.MinecraftForge' 'EVENT_BUS'
 pin_uni 'net.minecraftforge.registries.ForgeRegistries' 'BLOCKS'
+pin_uni 'net.minecraftforge.registries.ForgeRegistries' 'ITEMS'
 pin_uni 'net.minecraftforge.registries.IForgeRegistry' 'getValue('
 pin_uni 'net.minecraftforge.registries.IForgeRegistry' 'containsKey('
 pin_uni 'net.minecraftforge.registries.DeferredRegister' 'create('
@@ -865,6 +870,9 @@ echo "ok d3-live : bind clean, ticks clean"
 grep -a -q '\[MatouBridge\] registered <example1:my_ore> id example1:my_ore' $LOGS \
   || { echo "FAIL d3-live : my_ore registration line absent from boot log (deferred fill never registered? see $SERV/boot-d3.log)"; exit 1; }
 echo "ok d3-live : my_ore registered ($(grep -a -o '\[MatouBridge\] registered <example1:my_ore> id [^ ]*' $LOGS | tail -n 1))"
+grep -a -q '\[MatouBridge\] registered-item <example1:my_gem> id example1:my_gem' $LOGS \
+  || { echo "FAIL d3-live : my_gem registration line absent from boot log (deferred fill never registered? see $SERV/boot-d3.log)"; exit 1; }
+echo "ok d3-live : my_gem registered ($(grep -a -o '\[MatouBridge\] registered-item <example1:my_gem> id [^ ]*' $LOGS | tail -n 1))"
 
 # 7. Positive proof: world blocks in chunks (0..1, -1..1) at y=60..61
 #    plus y=63..65 must equal the pure decision union — plane cells
