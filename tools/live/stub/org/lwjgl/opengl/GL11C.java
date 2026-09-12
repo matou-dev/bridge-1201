@@ -1,5 +1,7 @@
 package org.lwjgl.opengl;
 
+import java.nio.ByteBuffer;
+
 /**
  * Shape-only compile stub for LWJGL 3 GL11C (1.16.5 era).
  * Never runs (compile classpath only). Same role as the 1122 GL11 stub
@@ -22,4 +24,16 @@ public class GL11C {
     public static void glEnable(int cap) {}
     public static void glDepthMask(boolean flag) {}
     public static void glCullFace(int mode) {}
+
+    // Core GL11 texture upload (V2 tranche): same signatures on every
+    // LWJGL 3.x (glGenTextures/glBindTexture/glTexImage2D with the border
+    // arg/glTexParameteri/glDeleteTextures) — the live proof links them
+    // against the provisioned 3.3.x bytes, never this stub.
+    public static int glGenTextures() { return 0; }
+    public static void glBindTexture(int target, int texture) {}
+    public static void glTexImage2D(int target, int level, int internalFormat,
+            int width, int height, int border, int format, int type,
+            ByteBuffer pixels) {}
+    public static void glTexParameteri(int target, int pname, int param) {}
+    public static void glDeleteTextures(int texture) {}
 }
