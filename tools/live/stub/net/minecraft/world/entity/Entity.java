@@ -46,6 +46,20 @@ public class Entity {
      * {@code tools/live/want.tsv}). Never runs.
      */
     public int tickCount;
+    /**
+     * Walk-phase compile stub (hub decisions/MATOU_ANIMATION.md,
+     * walk-phase driver tranche): 47.2.0 {@code Entity} declares the
+     * cumulative walk-distance counters the skinned renderer and posed
+     * hitboxes feed to {@code query.modified_distance_moved}
+     * ({@code walkDist} is the Mojmap {@code X F} field and
+     * {@code walkDistO} the Mojmap {@code W F} field, both measured
+     * against the pinned 47.2.0 bytes like every other Entity row in
+     * {@code tools/live/want.tsv}). The renderer interpolates
+     * prev-to-cur over partialTicks, the hitboxes read the current
+     * tick value. Never runs.
+     */
+    public float walkDist;
+    public float walkDistO;
 
     public float getYRot() {
         return 0;

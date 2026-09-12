@@ -494,9 +494,15 @@ public final class InstancedMeshRenderer {
                 // discipline — never the beast), one sealed-clip pose
                 // per mob per bucket. 1.20.1 names the age field
                 // tickCount (Mojmap — the 1.16.5 ticksExisted name does
-                // not port).
+                // not port) and the distance clock walkDist/walkDistO
+                // (the 1.12 distanceWalkedModified pair does not port —
+                // the renderer interpolates prev-to-cur over
+                // partialTicks, same shape as the xo interpolation
+                // beside it).
                 double t = e.tickCount / 20.0;
-                Molang.Ctx ctx = new Molang.Ctx(t, t, 0.0, 0.05, null);
+                double dist = BeastAnimation.interpDistMoved(
+                        e.walkDistO, e.walkDist, partialTicks);
+                Molang.Ctx ctx = BeastAnimation.animCtx(t, dist);
                 MatouAnimation.AnimPose pose = BeastAnimation.poseFor(
                         beast.mobOrFirst(), t, ctx);
                 Map<String, float[]> deltas = skinModel.poseDeltaMatrices(pose);

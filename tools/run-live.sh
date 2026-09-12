@@ -262,7 +262,7 @@ echo "ok d3-live : server provisioned (pins verified)"
 #    Production classes stay Mojmap (installer MERGE_MAPPING keeps classes
 #    official) — only members reobfuscate, so no class lines are needed.
 # Mechanics live in hub/tools/live-derive.sh (era 1.20), rows in
-# tools/live/want.tsv — same 59 lines, byte-identical output.
+# tools/live/want.tsv — same 62 lines, byte-identical output.
 SRG_NARROW="$D3_DIR/srg-narrow.srg"
 live_derive_mojmaps "$D3_DIR/mcp_config-1.20.1-20230612.114412.zip" "$D3_DIR/server-mappings.txt" "$MC_INNER" "$J17/javap" "$SRG_NARROW" "$D3_DIR/client-mappings.txt" "$MCCLIENT" "tools/live/want.tsv"
 # 2b. Pin every derived line: a derivation the SRG does not confirm is a loud
@@ -329,6 +329,14 @@ for f in xo yo zo yRotO xRotO; do pin_field "net/minecraft/world/entity/Entity/$
 # (the walk-clock field, owner Entity, Mojmap) — the narrow map grows
 # 59 -> 60 lines.
 pin_field "net/minecraft/world/entity/Entity/tickCount"
+# The walk-phase driver tranche (same decision file) adds 2 rows:
+# Entity/walkDist (Mojmap X F) plus Entity/walkDistO (Mojmap W F) —
+# the per-mob distance clock feeding query.modified_distance_moved
+# (renderer interpolates prev-to-cur over partialTicks, hitboxes read
+# cur). Loop form (not two pins): eSLOC ceiling discipline, same pins
+# table-driven — every member name stays literal and grep-able.
+# The narrow map grows 60 -> 62 lines.
+for f in walkDist walkDistO; do pin_field "net/minecraft/world/entity/Entity/$f"; done
 # Renderer client-only rows (hub decisions/MATOU_MODEL.md +
 # GL_INSTANCING_ADAPTER.md): every net/minecraft/client/* + com/mojang/*
 # member the client-only InstancedMeshRenderer touches. Anchors are
@@ -345,8 +353,8 @@ pin_method "com/mojang/blaze3d/vertex/PoseStack\$Pose/pose" "()Lorg/joml/Matrix4
 pin_field "net/minecraft/world/item/Items/DIAMOND"
 pin_field "net/minecraft/world/entity/EntityType/PIG"
 pin_field "net/minecraft/world/entity/ai/attributes/Attributes/MAX_HEALTH"
-[ "$(grep -c . "$SRG_NARROW")" = "60" ] \
-  || { echo "FAIL d3-live : narrow map drift (want 60 lines)"; exit 1; }
+[ "$(grep -c . "$SRG_NARROW")" = "62" ] \
+  || { echo "FAIL d3-live : narrow map drift (want 62 lines)"; exit 1; }
 echo "ok d3-live : stubs pinned to derived SRG"
 
 # 2c. Pin every stubbed member against the provisioned jars. Forge classes

@@ -159,16 +159,19 @@ public class MatouEntity extends Pig implements Hittable {
         // fix, never red-crashed first.
         // Animation tranche (hub decisions/MATOU_ANIMATION.md): the boxes
         // ride the sealed clip pose (head shots meet the turned head),
-        // never bind. Clock is the entity age (tickCount / 20);
-        // modified_distance_moved reads 0.0 until the walk-phase driver
-        // lands (named follow-up — the shipped walk clip drives its head
-        // off life_time and its body off keyframes, so E0 already moves).
+        // never bind. Clock is the entity age (tickCount / 20); the
+        // walk-phase driver feeds query.modified_distance_moved from the
+        // per-mob distance counter (walkDist, current tick value — the
+        // shipped walk clip drives its head off life_time and its body
+        // off keyframes, so a standing mob poses as before while a
+        // walking one phases any dist-driven channel).
         // 1.20.1 reads the origin through the getX/Y/Z getters (the 1.12
         // posX field shape does not port) and the age through the Mojmap
         // tickCount field.
         Entity self = this;
         double t = self.tickCount / 20.0;
-        Molang.Ctx ctx = new Molang.Ctx(t, t, 0.0, 0.05, null);
+        Molang.Ctx ctx = BeastAnimation.animCtx(t,
+                self.walkDist);
         MatouAnimation.AnimPose pose = BeastAnimation.poseFor(
                 mobOrFirst(), t, ctx);
         return BeastModel.cached().model().placedPosedBoxes(
