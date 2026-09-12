@@ -137,7 +137,15 @@ def main(saves, world):
         _long("Time", 0),
         _long("DayTime", 0),
         _int("SpawnX", 8),
-        _int("SpawnY", 5),
+        # Feet 66 rides the proof slices, never the void: 1.20 stacks
+        # these 4 flat layers from the world bottom (-64..-61), so the
+        # pre-1.18 SpawnY 5 spawns 66 blocks in the air and the join
+        # search resolves the floor/wire race per run (measured
+        # 2026-09-12: one run joined at -60, the next at 66, same
+        # bytes). Chunk (0,0) is solid stone through y=65 in every
+        # deterministic union, so feet 66 stands on the cap beside
+        # the 66..68 beast pads, inside the renderer 64-box always.
+        _int("SpawnY", 66),
         _int("SpawnZ", 8),
         _world_gen_settings(0),
         _int("version", 3465),
