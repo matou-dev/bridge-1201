@@ -38,6 +38,14 @@ public class Entity {
     public double zo;
     public float yRotO;
     public float xRotO;
+    /**
+     * Animation compile stub: 47.2.0 {@code Entity} declares the age
+     * counter the skinned renderer and posed hitboxes read for the clip
+     * clock ({@code tickCount} is the Mojmap {@code I} field, measured
+     * against the pinned 47.2.0 bytes like every other Entity row in
+     * {@code tools/live/want.tsv}). Never runs.
+     */
+    public int tickCount;
 
     public float getYRot() {
         return 0;

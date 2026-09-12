@@ -57,3 +57,4 @@ METHODS	net/minecraft/world/entity/animal/Pig	readAdditionalSaveData	(Lnet/minec
 METHODS	net/minecraft/nbt/CompoundTag	contains	(Ljava/lang/String;)Z	0
 METHODS	net/minecraft/nbt/CompoundTag	getString	(Ljava/lang/String;)Ljava/lang/String;	0
 METHODS	net/minecraft/nbt/CompoundTag	putString	(Ljava/lang/String;Ljava/lang/String;)V	0
+FIELDS	net/minecraft/world/entity/Entity	tickCount	I	0

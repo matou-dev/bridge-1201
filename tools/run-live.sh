@@ -324,6 +324,11 @@ for f in x y z; do pin_field "net/minecraft/world/phys/Vec3/$f"; done
 for m in addAdditionalSaveData readAdditionalSaveData; do pin_method "net/minecraft/world/entity/animal/Pig/$m" "(Lnet/minecraft/nbt/CompoundTag;)V"; done
 for spec in "contains (Ljava/lang/String;)Z" "getString (Ljava/lang/String;)Ljava/lang/String;" "putString (Ljava/lang/String;Ljava/lang/String;)V"; do pin_method "net/minecraft/nbt/CompoundTag/${spec%% *}" "${spec#* }"; done
 for f in xo yo zo yRotO xRotO; do pin_field "net/minecraft/world/entity/Entity/$f"; done
+# The animation tranche (hub decisions/MATOU_ANIMATION.md, posed
+# hitboxes on the entity-age clock) adds 1 row: Entity/tickCount
+# (the walk-clock field, owner Entity, Mojmap) — the narrow map grows
+# 59 -> 60 lines.
+pin_field "net/minecraft/world/entity/Entity/tickCount"
 # Renderer client-only rows (hub decisions/MATOU_MODEL.md +
 # GL_INSTANCING_ADAPTER.md): every net/minecraft/client/* + com/mojang/*
 # member the client-only InstancedMeshRenderer touches. Anchors are
@@ -340,8 +345,8 @@ pin_method "com/mojang/blaze3d/vertex/PoseStack\$Pose/pose" "()Lorg/joml/Matrix4
 pin_field "net/minecraft/world/item/Items/DIAMOND"
 pin_field "net/minecraft/world/entity/EntityType/PIG"
 pin_field "net/minecraft/world/entity/ai/attributes/Attributes/MAX_HEALTH"
-[ "$(grep -c . "$SRG_NARROW")" = "59" ] \
-  || { echo "FAIL d3-live : narrow map drift (want 59 lines)"; exit 1; }
+[ "$(grep -c . "$SRG_NARROW")" = "60" ] \
+  || { echo "FAIL d3-live : narrow map drift (want 60 lines)"; exit 1; }
 echo "ok d3-live : stubs pinned to derived SRG"
 
 # 2c. Pin every stubbed member against the provisioned jars. Forge classes
@@ -644,8 +649,9 @@ if [ "${BUILD_ONLY:-}" = "1" ]; then
   cp ../example1/content/owned.matou ../example1/content/additive.matou ../example1/content/structure.matou ../example1/content/vein.matou dist/matou-content/
   cp tools/live/my_beast.geo.json dist/my_beast.geo.json
   cp tools/live/my_beast.png dist/my_beast.png
+  cp tools/live/my_beast.animation.json dist/my_beast.animation.json
   printf '# Copy to <server>/config/matoubridge/packs.cfg and replace <SERVER>.\n# Wire y=63 keeps plane cells on their own slice, off the structure slices (64..65).\n# The wire block is the registered custom ore (DeferredRegister queues example1:my_ore from owned.matou, the fill lands before setup binds resolve it); aliases stay vanilla stone.\n# Vein clusters land on the BASE_Y=60 band (slices 60..61) as the registered ore via the veinblock alias.\nfr.iamacat.example1.ExamplePack 63 example1:my_ore ownedFile=<SERVER>/matou-content/owned.matou scatterFile=<SERVER>/matou-content/additive.matou structureFile=<SERVER>/matou-content/structure.matou block.example1.structures:hut_wall=minecraft:stone block.example1.structures:hut_roof=minecraft:stone veinFile=<SERVER>/matou-content/vein.matou veinblock.example1.content:my_ore=example1:my_ore\n' > dist/packs.cfg.example
-  (cd dist && sha256sum "matou-spi-$VERSION.jar" "matou-example1-$VERSION.jar" "matou-minimap-$VERSION.jar" "matoubridge-$VERSION.jar" matou-content/owned.matou matou-content/additive.matou matou-content/structure.matou matou-content/vein.matou packs.cfg.example my_beast.geo.json my_beast.png > SHA256SUMS.txt)
+  (cd dist && sha256sum "matou-spi-$VERSION.jar" "matou-example1-$VERSION.jar" "matou-minimap-$VERSION.jar" "matoubridge-$VERSION.jar" matou-content/owned.matou matou-content/additive.matou matou-content/structure.matou matou-content/vein.matou packs.cfg.example my_beast.geo.json my_beast.png my_beast.animation.json > SHA256SUMS.txt)
   (cd dist && sha256sum -c SHA256SUMS.txt)
   echo "ok r2-release : dist/ assembled (VERSION=$VERSION)"
   exit 0
@@ -677,6 +683,10 @@ cp "$GEO_SRC" "$SERV/config/matoubridge/my_beast.geo.json"
 # decisions/MATOU_MODEL.md). Deployed beside the geometry,
 # operator-replaceable like it.
 cp tools/live/my_beast.png "$SERV/config/matoubridge/my_beast.png"
+# Beast animation: the shipped walk clip the skinned renderer poses and
+# the hitboxes ride (hub decisions/MATOU_ANIMATION.md). Deployed beside
+# the geometry, operator-replaceable like it.
+cp tools/live/my_beast.animation.json "$SERV/config/matoubridge/my_beast.animation.json"
 echo "eula=true" > "$SERV/eula.txt"
 printf 'online-mode=false\nlevel-type=minecraft:flat\ngamemode=1\ndifficulty=0\nmotd=D3 live proof\nmax-tick-time=-1\n' > "$SERV/server.properties"
 rm -rf "$SERV/world" "$SERV/logs"
@@ -686,10 +696,13 @@ live_boot "$SERV" "$BOOT_SECS" "boot-d3.log" sh run.sh nogui
 #    the rolling server log — Forge splits output across both). E_HIT rides
 #    it too: the combat hook refuses corrupt attacker state loudly out of
 #    SPI (hub decisions/VIRTUAL_HITBOXES.md) — a NaN eye that passed would
-#    mean a defaulted multiplier somewhere.
+#    mean a defaulted multiplier somewhere. E_ANIM rides it as well: the
+#    posed hitboxes evaluate the sealed clip server-side (hub
+#    decisions/MATOU_ANIMATION.md) — an animation refusal on the server is
+#    a no-regression breach, never a silent bind fallback.
 LOGS="$SERV/boot-d3.log"
 [ -f "$SERV/logs/latest.log" ] && LOGS="$LOGS $SERV/logs/latest.log"
-live_verdict "NoSuchMethodError\|NoSuchFieldError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|E_LOOT\|E_SPAWN\|E_SPIKE\|E_MODEL\|E_HIT\|Encountered an unexpected exception" "NoSuchMethodError\|NoSuchFieldError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|E_LOOT\|E_SPAWN\|E_SPIKE\|E_MODEL\|E_HIT\|Caused by" $LOGS
+live_verdict "NoSuchMethodError\|NoSuchFieldError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|E_LOOT\|E_SPAWN\|E_SPIKE\|E_MODEL\|E_HIT\|E_ANIM\|Encountered an unexpected exception" "NoSuchMethodError\|NoSuchFieldError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|E_LOOT\|E_SPAWN\|E_SPIKE\|E_MODEL\|E_HIT\|E_ANIM\|Caused by" $LOGS
 # Registration proof: the setup-time verify line carries the registry key
 # (1.20.1 has no numeric block ids — the anvil probe reads namespaced
 # names, and this line proves the custom name resolved through the
