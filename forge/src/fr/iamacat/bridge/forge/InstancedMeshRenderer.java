@@ -96,6 +96,7 @@ public final class InstancedMeshRenderer {
     private final GlBackend backend;
     private boolean initialized;
     private boolean drawLogged;
+    private int skippedNan;
     private int program;
     private int vao;
     private int meshVbo;
@@ -296,6 +297,33 @@ public final class InstancedMeshRenderer {
         // the row-major product the plan consumes.
         float[] vp = ViewProjection.vpRowMajor(colMajor(viewMatrixBuffer),
                 colMajor(projMatrixBuffer));
+        // Loading-transient guard (measured live 2026-09-12: during the
+        // client-world join AFTER_ENTITIES fires with a non-finite
+        // projection from the event — vanilla draws garbage those frames
+        // too; same signature as the 1165 join transient). A
+        // non-projection cannot be culled against, so the frame is
+        // skipped BEFORE the seal (never planned, never uploaded) —
+        // loudly on first sight and every 600th, and refusing with the
+        // seal's own code past 3600 consecutive bad frames (a full
+        // minute: no join lasts that long, so persistence is a wiring
+        // bug, never a transient).
+        if (!finite16(vp)) {
+            skippedNan++;
+            if (skippedNan == 1 || skippedNan % 600 == 0) {
+                System.out.println("[MatouRenderer] skipped non-finite"
+                        + " view-projection (run " + skippedNan
+                        + " consecutive frames — join transient,"
+                        + " draw skipped, never planned)");
+            }
+            if (skippedNan > 3600) {
+                throw new IllegalStateException(
+                        "E_RENDER_FRUSTUM:degenerate <projection non-finite "
+                        + skippedNan + " consecutive frames>"
+                        + " (not a projection)");
+            }
+            return;
+        }
+        skippedNan = 0;
         Map<MatouId, Object> states = RenderSeal.seal(
                 RenderJob.vocabulary(),
                 new double[] {eyeX, eyeY, eyeZ}, vp, recs);
@@ -389,5 +417,19 @@ public final class InstancedMeshRenderer {
             m[i] = buf.get(i);
         }
         return m;
+    }
+
+    /**
+     * Every lane finite (NaN or infinite poisons the product — the
+     * loading-transient signature above). Pure lane scan, no
+     * allocation, disturb nothing.
+     */
+    private static boolean finite16(float[] m) {
+        for (int i = 0; i < 16; i++) {
+            if (!Float.isFinite(m[i])) {
+                return false;
+            }
+        }
+        return true;
     }
 }
