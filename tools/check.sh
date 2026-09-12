@@ -82,6 +82,7 @@ java -cp build/sib fr.iamacat.bridge.loot.LootCheck
 java -cp build/sib fr.iamacat.bridge.spawn.SpawnCheck
 java -cp build/sib fr.iamacat.bridge.spike.RepopCheck
 java -cp build/sib fr.iamacat.bridge.model.ModelWireCheck
+java -cp build/sib fr.iamacat.bridge.render.RenderWireCheck
 # Etage 2 : forge/ seul touche MC/Forge (1.20.1). Stub shape-only, pas de
 # MC_JAR requis : vert partout, le live D3 prouve contre le vrai jar
 # (etage 3, LIVE=1).
